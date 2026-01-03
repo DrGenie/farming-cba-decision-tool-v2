@@ -1,6 +1,6 @@
 // Farming CBA Decision Tool 2 - Newcastle Business School
 // Fully upgraded script with working tabs, CBA, Excel-first workflow, AI helper,
-// treatment–control matrix, and snapshot-first results.
+// treatment–control matrixsnew, and snapshot-first results.
 
 (() => {
   "use strict";
