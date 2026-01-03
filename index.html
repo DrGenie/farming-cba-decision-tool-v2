@@ -1,280 +1,262 @@
-<!-- index.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Farming CBA Decision Aid</title>
-  <link rel="stylesheet" href="./styles.css" />
-  <!-- SheetJS (XLSX) for client-side Excel import -->
-  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script defer src="./app.js"></script>
+  <meta charset="UTF-8" />
+  <title>Farming CBA Decision Tool 2</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- XLSX for Excel/CSV import & export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-  <header class="app-header">
-    <div class="app-header__left">
-      <div class="brand">
-        <div class="brand__mark" aria-hidden="true">F</div>
-        <div class="brand__text">
-          <div class="brand__title">Farming CBA Decision Aid</div>
-          <div class="brand__subtitle">Import trial data, compare amendments, run simple gross margin scenarios</div>
-        </div>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-title-block">
+        <h1>Farming CBA Decision Tool 2</h1>
+        <p class="app-subtitle">
+          Snapshot-first, Excel-first cost–benefit analysis using the Lockhart field trial dataset.
+        </p>
       </div>
-    </div>
+      <div class="app-badge">CBA</div>
+    </header>
 
-    <div class="app-header__right">
-      <div class="pill" id="datasetPill" title="Dataset status">No data loaded</div>
-      <button class="btn btn--ghost" id="btnReset" type="button" title="Reset to initial state">Reset</button>
-    </div>
-  </header>
+    <nav class="tabs">
+      <button class="tab-button active" data-tab="tab-intro">1. Overview</button>
+      <button class="tab-button" data-tab="tab-data">2. Data &amp; Treatments</button>
+      <button class="tab-button" data-tab="tab-results">3. Results matrix</button>
+      <button class="tab-button" data-tab="tab-ai">4. AI helper prompt</button>
+      <button class="tab-button" data-tab="tab-export">5. Export &amp; print</button>
+    </nav>
 
-  <nav class="tabs" role="tablist" aria-label="Tool sections">
-    <button class="tab is-active" role="tab" aria-selected="true" aria-controls="panel-import" id="tab-import" data-tab="import" type="button">Import</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-treatments" id="tab-treatments" data-tab="treatments" type="button">Treatments</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-scenarios" id="tab-scenarios" data-tab="scenarios" type="button">Scenario</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-outputs" id="tab-outputs" data-tab="outputs" type="button">Export</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-help" id="tab-help" data-tab="help" type="button">Help</button>
-  </nav>
-
-  <main class="main">
-    <!-- Import -->
-    <section class="panel is-active" role="tabpanel" id="panel-import" aria-labelledby="tab-import" data-panel="import">
-      <div class="grid grid--2">
+    <main class="tab-container">
+      <!-- TAB 1: INTRO -->
+      <section id="tab-intro" class="tab-pane active">
         <div class="card">
-          <div class="card__header">
-            <h2 class="card__title">Import Excel</h2>
-            <div class="card__subtitle">Choose an .xlsx file. The tool will auto-detect the header row and key fields.</div>
-          </div>
+          <h2>How this tool works</h2>
+          <p>
+            This tool turns your Lockhart field trial dataset into a simple cost–benefit analysis,
+            comparing each soil amendment against the control. It is designed for an Excel-first
+            workflow: you upload the original dataset (no reformatting), the tool aggregates by
+            amendment, and the results matrix shows NPV, PV benefits, PV costs, BCR, ROI and ranking.
+          </p>
 
-          <div class="card__body">
-            <div class="stack">
-              <div class="row">
-                <label class="label" for="fileInput">Excel file (.xlsx)</label>
-                <input id="fileInput" class="file" type="file" accept=".xlsx,.xls" />
-              </div>
+          <p>
+            The workflow is:
+          </p>
+          <ol class="steps-list">
+            <li><strong>Data &amp; Treatments:</strong> Upload the Lockhart data file
+              (<code>.xlsx</code> or <code>.csv</code>) exactly as provided. The tool automatically
+              finds the header row (<em>Amendment</em>, <em>Yield t/ha</em>,
+              <em>Treatment Input Cost Only /Ha</em>) and aggregates over all plots.</li>
+            <li><strong>Results matrix:</strong> Set the grain price, discount rate and time horizon.
+              The tool computes PV benefits, PV costs, NPV, BCR and ROI per treatment, all per hectare
+              and relative to the control.</li>
+            <li><strong>AI helper:</strong> Copy a ready-made prompt (with JSON summary of the results)
+              into your preferred AI assistant for a farmer-friendly interpretation.</li>
+            <li><strong>Export &amp; print:</strong> Export the results matrix to Excel or print a clean
+              results page to PDF via the browser print dialog.</li>
+          </ol>
 
-              <div class="row row--wrap">
-                <button class="btn" id="btnLoadBundledXlsx" type="button">Load bundled XLSX (if present)</button>
-                <button class="btn btn--secondary" id="btnLoadEmbedded" type="button">Load embedded Lockhart sample</button>
-              </div>
-
-              <div class="callout" id="importCallout">
-                <div class="callout__title">Tip</div>
-                <div class="callout__text">
-                  If you want the page to auto-load your uploaded file when hosted, place the Excel in the same folder as these files and name it <code>data.xlsx</code>.
-                  The “Load bundled XLSX” button tries <code>./data.xlsx</code> first, then <code>./Data for Lockhart-FA-031225 (1).xlsx</code>.
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="kpi-grid">
-                <div class="kpi">
-                  <div class="kpi__label">Rows</div>
-                  <div class="kpi__value" id="kpiRows">0</div>
-                </div>
-                <div class="kpi">
-                  <div class="kpi__label">Treatments</div>
-                  <div class="kpi__value" id="kpiTreatments">0</div>
-                </div>
-                <div class="kpi">
-                  <div class="kpi__label">Yield field</div>
-                  <div class="kpi__value kpi__value--mono" id="kpiYieldKey">—</div>
-                </div>
-                <div class="kpi">
-                  <div class="kpi__label">Cost field</div>
-                  <div class="kpi__value kpi__value--mono" id="kpiCostKey">—</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card__header">
-            <h2 class="card__title">Data preview</h2>
-            <div class="card__subtitle">First rows from the imported sheet.</div>
-          </div>
-          <div class="card__body">
-            <div class="muted" id="previewNote">No data yet. Import an Excel file or load the embedded sample.</div>
-            <div class="table-wrap" id="previewTableWrap" hidden></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
-        <div class="card__header">
-          <h2 class="card__title">Detected columns</h2>
-          <div class="card__subtitle">Useful when your workbook has duplicated or messy headers.</div>
-        </div>
-        <div class="card__body">
-          <div class="chips" id="columnsChips"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Treatments -->
-    <section class="panel" role="tabpanel" id="panel-treatments" aria-labelledby="tab-treatments" data-panel="treatments">
-      <div class="card">
-        <div class="card__header">
-          <h2 class="card__title">Treatment comparison</h2>
-          <div class="card__subtitle">Means by treatment (default grouping uses <code>Amendment</code>, then falls back to <code>Trt</code>).</div>
-        </div>
-
-        <div class="card__body">
-          <div class="toolbar">
-            <div class="toolbar__group">
-              <label class="label" for="baselineSelect">Baseline</label>
-              <select id="baselineSelect" class="select"></select>
-            </div>
-
-            <div class="toolbar__group">
-              <label class="label" for="sortSelect">Sort</label>
-              <select id="sortSelect" class="select">
-                <option value="delta_gm_desc">Incremental gross margin (desc)</option>
-                <option value="gm_desc">Gross margin (desc)</option>
-                <option value="yield_desc">Yield (desc)</option>
-                <option value="cost_asc">Cost (asc)</option>
-                <option value="name_asc">Name (A→Z)</option>
-              </select>
-            </div>
-
-            <div class="toolbar__group toolbar__group--wide">
-              <label class="label" for="searchInput">Search</label>
-              <input id="searchInput" class="input" type="text" placeholder="Filter treatments…" />
-            </div>
-
-            <div class="toolbar__spacer"></div>
-
-            <div class="toolbar__group">
-              <button class="btn btn--secondary" id="btnToScenario" type="button">Adjust scenario</button>
-            </div>
-          </div>
-
-          <div class="table-wrap" id="treatmentsTableWrap"></div>
-
-          <div class="note" id="treatmentsNote">
-            Gross margin = Yield × Price − Total cost. Incremental gross margin is computed relative to the chosen baseline using group means.
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Scenario -->
-    <section class="panel" role="tabpanel" id="panel-scenarios" aria-labelledby="tab-scenarios" data-panel="scenarios">
-      <div class="grid grid--2">
-        <div class="card">
-          <div class="card__header">
-            <h2 class="card__title">Scenario settings</h2>
-            <div class="card__subtitle">Applies instantly to the treatment table and exports.</div>
-          </div>
-
-          <div class="card__body">
-            <div class="form-grid">
-              <div class="row">
-                <label class="label" for="priceInput">Grain price ($/t)</label>
-                <input class="input" id="priceInput" type="number" min="0" step="1" />
-                <div class="hint">Used with the detected yield field (t/ha) to compute revenue per hectare.</div>
-              </div>
-
-              <div class="row">
-                <label class="label" for="yieldScaleInput">Yield scale</label>
-                <select class="select" id="yieldScaleInput">
-                  <option value="1">Use as-is</option>
-                  <option value="0.1">× 0.1</option>
-                  <option value="10">× 10</option>
-                </select>
-                <div class="hint">If your yield column is recorded in different units.</div>
-              </div>
-
-              <div class="row">
-                <label class="label" for="costScaleInput">Cost scale</label>
-                <select class="select" id="costScaleInput">
-                  <option value="1">Use as-is</option>
-                  <option value="0.01">× 0.01</option>
-                  <option value="100">× 100</option>
-                </select>
-                <div class="hint">If your cost column is recorded in cents or other scaling.</div>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="row row--wrap">
-              <button class="btn" id="btnBackToTreatments" type="button">Back to treatments</button>
-              <button class="btn btn--ghost" id="btnResetScenario" type="button">Reset scenario defaults</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card__header">
-            <h2 class="card__title">Sanity checks</h2>
-            <div class="card__subtitle">Quick diagnostics to avoid silent parsing mistakes.</div>
-          </div>
-          <div class="card__body">
-            <div class="sanity" id="sanityBox">
-              <div class="muted">Load data to see diagnostics.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Export -->
-    <section class="panel" role="tabpanel" id="panel-outputs" aria-labelledby="tab-outputs" data-panel="outputs">
-      <div class="card">
-        <div class="card__header">
-          <h2 class="card__title">Export</h2>
-          <div class="card__subtitle">Download processed data and summaries for reporting.</div>
-        </div>
-
-        <div class="card__body">
-          <div class="row row--wrap">
-            <button class="btn" id="btnExportProcessedCsv" type="button">Download processed rows (CSV)</button>
-            <button class="btn btn--secondary" id="btnExportSummaryCsv" type="button">Download treatment summary (CSV)</button>
-            <button class="btn btn--ghost" id="btnExportJson" type="button">Download state (JSON)</button>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="muted" id="exportNote">
-            Exports use the current scenario (price and scaling). If nothing downloads, check your browser’s pop-up/download permissions.
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Help -->
-    <section class="panel" role="tabpanel" id="panel-help" aria-labelledby="tab-help" data-panel="help">
-      <div class="card">
-        <div class="card__header">
-          <h2 class="card__title">Help</h2>
-          <div class="card__subtitle">How the tool reads your workbook and what to do if detection is off.</div>
-        </div>
-        <div class="card__body">
-          <div class="prose">
+          <div class="info-callout">
+            <h3>What the tool assumes</h3>
             <p>
-              This tool imports the first worksheet in your Excel file, finds the densest row among the first 60 rows (the likely header row),
-              deduplicates repeated header names, and reads subsequent rows until the sheet becomes mostly empty.
+              For each treatment, the tool:
             </p>
+            <ul>
+              <li>Aggregates all plots with the same <strong>Amendment</strong> label.</li>
+              <li>Uses the average <strong>Yield t/ha</strong> as the treatment yield.</li>
+              <li>Uses the average <strong>Treatment Input Cost Only /Ha</strong> as the yearly
+                  treatment cost per hectare.</li>
+              <li>Treats the control as the baseline. PV benefits are the discounted value of extra
+                  yield revenue versus the control. PV costs are the discounted treatment costs plus
+                  any capital cost you specify.</li>
+            </ul>
             <p>
-              The treatment grouping key is chosen by preference: <code>Amendment</code>, then <code>Treatment</code>/<code>Trt</code>, then the first non-empty text column.
-              Yield is detected by matching headers like <code>Yield</code> (prefer <code>Yield t/ha</code>), and total cost by preference for a header named <code>|</code>,
-              otherwise the numeric “cost-like” column with the strongest coverage.
-            </p>
-            <p>
-              If your workbook uses different names, the detected keys will show on the Import tab. If yield or cost looks wrong, use the scaling controls in the Scenario tab
-              (for unit mismatches) or adjust your Excel headers and re-import.
+              You can override yields, costs and control choice in the <strong>Data &amp; Treatments</strong>
+              tab if you want to test alternative scenarios.
             </p>
           </div>
         </div>
-      </div>
-    </section>
-  </main>
+      </section>
 
-  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden>
-    <div class="toast__content" id="toastText"></div>
+      <!-- TAB 2: DATA & TREATMENTS -->
+      <section id="tab-data" class="tab-pane">
+        <div class="card">
+          <h2>Step 1: Upload Lockhart data</h2>
+          <p>
+            Upload the original Lockhart field trial dataset
+            (<code>.xlsx</code> or <code>.csv</code>) exactly as it is. The tool will automatically
+            locate the header row and read:
+            <strong>Amendment</strong>, <strong>Yield t/ha</strong>, and
+            <strong>Treatment Input Cost Only /Ha</strong>.
+          </p>
+
+          <div class="upload-row">
+            <label for="file-input" class="upload-label">
+              Data file (Lockhart field trial)
+            </label>
+            <input
+              id="file-input"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+            />
+          </div>
+          <p id="file-status" class="text-muted">
+            No file loaded yet. Please upload the Lockhart dataset.
+          </p>
+
+          <hr class="section-divider" />
+
+          <h2>Step 2: Check and adjust treatments</h2>
+          <p>
+            Once the file is loaded, the table below shows one row per amendment (treatment),
+            with average yield and cost per hectare. You can edit these values or add a capital
+            cost per hectare in year 0 to stress-test different scenarios. One treatment is
+            marked as the <strong>control</strong>; by default this is any amendment whose name
+            contains “control”, otherwise the first treatment in the list.
+          </p>
+
+          <p id="treatments-no-data" class="text-muted">
+            Treatments will appear here after you load the dataset.
+          </p>
+
+          <div class="table-wrapper">
+            <table class="data-table" id="treatments-table">
+              <thead>
+                <tr>
+                  <th>Treatment (Amendment)</th>
+                  <th>Yield (t/ha)</th>
+                  <th>Capital cost ($/ha, year 0)</th>
+                  <th>Annual treatment cost ($/ha)</th>
+                  <th>Control?</th>
+                </tr>
+              </thead>
+              <tbody id="treatments-table-body">
+                <!-- Filled by app.js -->
+              </tbody>
+            </table>
+          </div>
+
+          <p class="text-muted">
+            Any changes here immediately update the CBA results in the next tab.
+          </p>
+        </div>
+      </section>
+
+      <!-- TAB 3: RESULTS -->
+      <section id="tab-results" class="tab-pane">
+        <div class="card">
+          <h2>Step 3: Results matrix</h2>
+
+          <div class="results-config-grid">
+            <div class="field-group">
+              <label for="price-per-tonne">Grain price ($ per tonne)</label>
+              <input
+                id="price-per-tonne"
+                type="number"
+                step="1"
+                min="0"
+                value="600"
+              />
+            </div>
+
+            <div class="field-group">
+              <label for="discount-rate">Discount rate (% per year)</label>
+              <input
+                id="discount-rate"
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value="7"
+              />
+            </div>
+
+            <div class="field-group">
+              <label for="time-horizon">Time horizon (years)</label>
+              <input
+                id="time-horizon"
+                type="number"
+                step="1"
+                min="1"
+                value="10"
+              />
+            </div>
+          </div>
+
+          <p class="results-summary" id="scenario-summary">
+            Price per tonne: <span id="summary-price">600</span>,
+            discount rate: <span id="summary-discount">7</span>%,
+            time horizon: <span id="summary-horizon">10</span> years.
+          </p>
+
+          <p id="results-empty" class="text-muted">
+            Upload the Lockhart dataset in the <strong>Data &amp; Treatments</strong> tab to see
+            the results matrix.
+          </p>
+
+          <div id="results-table-wrapper" class="table-wrapper" style="display:none;">
+            <table class="data-table results-table" id="results-table">
+              <!-- Filled by app.js -->
+            </table>
+          </div>
+
+          <p class="text-muted">
+            All indicators are calculated per hectare and relative to the chosen control.
+            NPV, PV benefits and PV costs are discounted using the specified rate and time horizon.
+          </p>
+        </div>
+      </section>
+
+      <!-- TAB 4: AI HELPER -->
+      <section id="tab-ai" class="tab-pane">
+        <div class="card">
+          <h2>Step 4: AI helper prompt</h2>
+          <p>
+            The text below is a ready-made prompt containing the current scenario and results in
+            JSON form. Copy and paste it into your preferred AI assistant to generate a
+            farmer-friendly interpretation of the CBA.
+          </p>
+
+          <div class="ai-actions">
+            <button id="btn-copy-prompt" class="btn-primary">Copy prompt to clipboard</button>
+            <span id="copy-status" class="text-muted"></span>
+          </div>
+
+          <textarea id="ai-prompt" class="ai-textarea" rows="20" spellcheck="false">
+Upload your dataset and configure the scenario to generate an AI interpretation prompt.
+          </textarea>
+        </div>
+      </section>
+
+      <!-- TAB 5: EXPORT -->
+      <section id="tab-export" class="tab-pane">
+        <div class="card">
+          <h2>Step 5: Export &amp; print</h2>
+          <p>
+            Use these options to move the results into your reporting workflow.
+          </p>
+
+          <div class="export-buttons">
+            <button id="btn-export-excel" class="btn-primary">
+              Export results matrix to Excel
+            </button>
+            <button id="btn-print" class="btn-secondary">
+              Print / Save results page as PDF
+            </button>
+          </div>
+
+          <p class="text-muted">
+            The Excel export contains the same vertical results matrix you see in the
+            <strong>Results matrix</strong> tab. For a PDF, the
+            <strong>Print / Save as PDF</strong> button opens the browser’s print dialog; choose
+            “Save as PDF” to create a clean, print-ready file focused on the current tab.
+          </p>
+        </div>
+      </section>
+    </main>
   </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
