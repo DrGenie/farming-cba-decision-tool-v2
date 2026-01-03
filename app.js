@@ -1,5 +1,5 @@
 // Farming CBA Decision Tool
-// Robust, fully working: tabs, dynamic inputs, correct PV/NPV/BCR/ROI, vertical comparison table,
+// Robust, working: tabs, dynamic inputs, correct PV/NPV/BCR/ROI, vertical comparison table,
 // Excel-first workflow (template + sample + import with validation), clean exports, simulation,
 // AI prompt generator, and full inclusion of the provided default dataset (raw rows).
 
