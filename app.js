@@ -1,2945 +1,2265 @@
-/* app.js (FULL) — Farming CBA Decision Tool 2
-   Results matrix vs control + Excel-first workflow + AI prompt + exports + simulation
-   Dependencies: xlsx.full.min.js (already loaded in index.html)
+/* Farming CBA Decision Tool 2 (commercial-grade)
+   Newcastle Business School, The University of Newcastle
+
+   Upgrade focus:
+   1) Results redesigned as a vertical comparison table: indicators as rows, treatments as columns, with Control included.
+   2) Excel-first workflow: download template (sample or scenario-specific), edit in Excel, upload, auto-validate, auto-calibrate.
+   3) Snapshot usability: headline metrics first, optional detail second.
+   4) AI-assisted interpretation prompt: flexible, non-prescriptive; includes improvement ideas for low BCR.
+   5) Decision support: never hide low-performing treatments; help users explore drivers.
+   6) Exports: clean Excel; printable PDF; copy/paste to Word.
+   7) Naming consistency: “Farming CBA Decision Tool 2” everywhere.
+   8) Treatments tab: Capital cost ($, year 0) appears before Total cost ($/ha); totals update dynamically.
+
+   Notes:
+   - This script is robust to missing DOM elements: it will no-op where elements are not present.
+   - XLSX (SheetJS) is used if present for Excel import/export. If not present, CSV fallbacks are provided.
 */
+
 (() => {
   "use strict";
 
-  /********************************************************************
-   * Constants + utilities
-   ********************************************************************/
+  // -----------------------------
+  // BRAND / STORAGE
+  // -----------------------------
   const TOOL_NAME = "Farming CBA Decision Tool 2";
-  const ORG_NAME = "Newcastle Business School";
+  const LS_KEY = "farming_cba_tool2_model_v1";
 
-  const REQUIRED_SHEETS = [
-    "Project",
-    "Settings",
-    "Outputs",
-    "Treatments",
-    "TreatmentOutputs",
-    "Benefits",
-    "Costs",
+  // -----------------------------
+  // CONSTANTS
+  // -----------------------------
+  const DEFAULT_DISCOUNT_SCHEDULE = [
+    { label: "2025-2034", from: 2025, to: 2034, low: 2, base: 4, high: 6 },
+    { label: "2035-2044", from: 2035, to: 2044, low: 4, base: 7, high: 10 },
+    { label: "2045-2054", from: 2045, to: 2054, low: 4, base: 7, high: 10 },
+    { label: "2055-2064", from: 2055, to: 2064, low: 3, base: 6, high: 9 },
+    { label: "2065-2074", from: 2065, to: 2074, low: 2, base: 5, high: 8 }
   ];
 
-  const fmtCurrency = new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    maximumFractionDigits: 0,
-  });
-  const fmtCurrency2 = new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    maximumFractionDigits: 2,
-  });
-  const fmtNumber2 = new Intl.NumberFormat("en-AU", { maximumFractionDigits: 2 });
-  const fmtNumber3 = new Intl.NumberFormat("en-AU", { maximumFractionDigits: 3 });
-  const fmtPercent1 = new Intl.NumberFormat("en-AU", { style: "percent", maximumFractionDigits: 1 });
+  const horizons = [5, 10, 15, 20, 25];
 
-  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
-  const isFiniteNumber = (x) => typeof x === "number" && Number.isFinite(x);
+  // -----------------------------
+  // DOM HELPERS
+  // -----------------------------
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
 
-  function uid(prefix = "id") {
-    try {
-      if (crypto && typeof crypto.randomUUID === "function") return `${prefix}_${crypto.randomUUID()}`;
-    } catch (_) {}
-    return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+  function setText(sel, txt) {
+    const el = typeof sel === "string" ? $(sel) : sel;
+    if (el) el.textContent = txt;
   }
 
-  function safeNum(v, fallback = 0) {
-    if (v === null || v === undefined) return fallback;
-    if (typeof v === "number") return Number.isFinite(v) ? v : fallback;
-    const s = String(v).trim();
-    if (s === "") return fallback;
-    const x = Number(s);
-    return Number.isFinite(x) ? x : fallback;
+  function setHTML(sel, html) {
+    const el = typeof sel === "string" ? $(sel) : sel;
+    if (el) el.innerHTML = html;
   }
 
-  function safeStr(v, fallback = "") {
-    if (v === null || v === undefined) return fallback;
-    return String(v);
+  function esc(s) {
+    return (s ?? "")
+      .toString()
+      .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  function ynToBool(v, fallback = false) {
-    if (typeof v === "boolean") return v;
-    const s = String(v ?? "").trim().toLowerCase();
-    if (["true", "t", "yes", "y", "1"].includes(s)) return true;
-    if (["false", "f", "no", "n", "0"].includes(s)) return false;
-    return fallback;
+  function clamp(v, a, b) {
+    return Math.max(a, Math.min(b, v));
   }
 
-  function downloadBlob(filename, blob) {
-    const a = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 800);
+  function uid() {
+    return Math.random().toString(36).slice(2, 10);
   }
 
-  function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
-    downloadBlob(filename, new Blob([text], { type: mime }));
+  function parseNumber(value) {
+    if (value === null || value === undefined || value === "") return NaN;
+    if (typeof value === "number") return value;
+    const s = String(value).trim();
+    if (!s) return NaN;
+    if (s === "?" || s.toLowerCase() === "na" || s.toLowerCase() === "n/a") return NaN;
+    const cleaned = s.replace(/[\$,]/g, "");
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : NaN;
   }
 
-  function todayISO() {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
+  const fmt = n =>
+    isFinite(n)
+      ? Math.abs(n) >= 1000
+        ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+        : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+      : "n/a";
+
+  const money = n => (isFinite(n) ? "$" + fmt(n) : "n/a");
+  const pct = n => (isFinite(n) ? fmt(n) + "%" : "n/a");
+
+  function showToast(message) {
+    const root = document.getElementById("toast-root") || document.body;
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.textContent = message;
+    root.appendChild(toast);
+    void toast.offsetWidth;
+    toast.classList.add("show");
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 200);
+    }, 3000);
   }
 
-  function toast(msg, kind = "info", ttl = 3500) {
-    const root = document.getElementById("toast-root");
-    if (!root) return;
-
-    const el = document.createElement("div");
-    el.className = `toast ${kind}`;
-    el.setAttribute("role", "status");
-    el.innerHTML = `
-      <div class="toast-inner">
-        <div class="toast-title">${TOOL_NAME}</div>
-        <div class="toast-msg">${escapeHtml(msg)}</div>
-      </div>
-      <button class="toast-x" type="button" aria-label="Dismiss">×</button>
+  // -----------------------------
+  // SMALL CSS INJECTION (table + tooltips + print)
+  // -----------------------------
+  function injectTool2CSS() {
+    if ($("#tool2-css")) return;
+    const css = document.createElement("style");
+    css.id = "tool2-css";
+    css.textContent = `
+      .tool2-badge{display:inline-flex;align-items:center;gap:.5rem}
+      .tool2-badge .dot{width:.6rem;height:.6rem;border-radius:999px;background:currentColor;opacity:.35}
+      .tool2-kpis{display:flex;flex-wrap:wrap;gap:.75rem;margin:.75rem 0 1rem}
+      .tool2-kpi{background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:.6rem .75rem;min-width:180px}
+      .tool2-kpi .lbl{font-size:.85rem;opacity:.75;margin-bottom:.15rem}
+      .tool2-kpi .val{font-size:1.05rem;font-weight:700}
+      .tool2-kpi .sub{font-size:.8rem;opacity:.75;margin-top:.1rem}
+      .tool2-table-wrap{overflow:auto;border-radius:14px;border:1px solid rgba(0,0,0,.10);background:#fff}
+      table.tool2-compare{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+      table.tool2-compare th, table.tool2-compare td{padding:.55rem .65rem;border-bottom:1px solid rgba(0,0,0,.08);border-right:1px solid rgba(0,0,0,.06);vertical-align:middle;white-space:nowrap}
+      table.tool2-compare th{position:sticky;top:0;background:#fafafa;z-index:3;font-weight:700}
+      table.tool2-compare th:first-child{left:0;z-index:4}
+      table.tool2-compare td:first-child{position:sticky;left:0;background:#fff;z-index:2;font-weight:600}
+      table.tool2-compare tr:last-child td{border-bottom:none}
+      table.tool2-compare th:last-child, table.tool2-compare td:last-child{border-right:none}
+      .tool2-muted{opacity:.7;font-weight:500}
+      .tool2-cell-good{background:rgba(0,128,0,.08)}
+      .tool2-cell-bad{background:rgba(178,34,34,.08)}
+      .tool2-cell-neutral{background:rgba(0,0,0,.03)}
+      .tool2-small{font-size:.82rem}
+      .tool2-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
+      .tool2-actions button{cursor:pointer}
+      .tool2-detail{margin-top:1rem}
+      .tool2-detail details{border:1px solid rgba(0,0,0,.10);border-radius:12px;padding:.6rem .75rem;background:#fff}
+      .tool2-detail summary{cursor:pointer;font-weight:700}
+      .tool2-help{background:rgba(0,0,0,.03);border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:.75rem;margin:.75rem 0}
+      .tool2-tipicon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;border:1px solid rgba(0,0,0,.25);font-size:12px;line-height:18px;margin-left:.35rem;cursor:help;opacity:.75}
+      .tool2-tooltip{position:fixed;z-index:9999;max-width:340px;background:#111;color:#fff;padding:.55rem .65rem;border-radius:10px;font-size:.85rem;box-shadow:0 10px 28px rgba(0,0,0,.25);pointer-events:none}
+      .tool2-tooltip .t{opacity:.95}
+      @media print{
+        .no-print{display:none !important}
+        .tool2-table-wrap{overflow:visible !important;border:none !important}
+        table.tool2-compare{width:100% !important;min-width:100% !important}
+        table.tool2-compare th{position:static !important}
+        table.tool2-compare td:first-child, table.tool2-compare th:first-child{position:static !important}
+      }
     `;
-    root.appendChild(el);
-
-    const kill = () => {
-      el.style.opacity = "0";
-      el.style.transform = "translateY(-4px)";
-      setTimeout(() => el.remove(), 220);
-    };
-    el.querySelector(".toast-x")?.addEventListener("click", kill);
-    setTimeout(kill, ttl);
+    document.head.appendChild(css);
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  // -----------------------------
+  // TOOLTIP SYSTEM (close to indicator)
+  // -----------------------------
+  let tooltipEl = null;
+
+  function ensureTooltip() {
+    if (tooltipEl) return tooltipEl;
+    tooltipEl = document.createElement("div");
+    tooltipEl.className = "tool2-tooltip";
+    tooltipEl.style.display = "none";
+    document.body.appendChild(tooltipEl);
+    return tooltipEl;
   }
 
-  function setLoading(on, text = "Working") {
-    const overlay = document.getElementById("appLoading");
-    if (!overlay) return;
-    if (!on) {
-      overlay.setAttribute("data-hidden", "true");
-      overlay.style.opacity = "0";
-      overlay.style.pointerEvents = "none";
-      setTimeout(() => {
-        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-      }, 450);
-      return;
-    }
-    overlay.removeAttribute("data-hidden");
-    overlay.style.opacity = "1";
-    overlay.style.pointerEvents = "auto";
-    const sub = overlay.querySelector(".app-loading-subtitle");
-    if (sub) sub.textContent = text;
+  function showTipNear(target, html) {
+    const t = ensureTooltip();
+    t.innerHTML = `<div class="t">${html}</div>`;
+    t.style.display = "block";
+    const r = target.getBoundingClientRect();
+    const pad = 10;
+    const maxW = Math.min(360, window.innerWidth - 2 * pad);
+    t.style.maxWidth = maxW + "px";
+
+    // Initial position: below-left of the target
+    let x = r.left;
+    let y = r.bottom + 8;
+
+    // Measure and keep within viewport
+    const tr = t.getBoundingClientRect();
+    if (x + tr.width > window.innerWidth - pad) x = window.innerWidth - pad - tr.width;
+    if (x < pad) x = pad;
+    if (y + tr.height > window.innerHeight - pad) y = r.top - tr.height - 8;
+    if (y < pad) y = pad;
+
+    t.style.left = `${x}px`;
+    t.style.top = `${y}px`;
   }
 
-  function el(tag, attrs = {}, children = []) {
-    const node = document.createElement(tag);
-    Object.entries(attrs).forEach(([k, v]) => {
-      if (k === "class") node.className = v;
-      else if (k === "html") node.innerHTML = v;
-      else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
-      else if (v === null || v === undefined) return;
-      else node.setAttribute(k, String(v));
+  function hideTip() {
+    if (!tooltipEl) return;
+    tooltipEl.style.display = "none";
+  }
+
+  function bindTooltips() {
+    document.addEventListener("mouseenter", e => {
+      const el = e.target.closest("[data-tip]");
+      if (!el) return;
+      showTipNear(el, esc(el.getAttribute("data-tip")));
+    }, true);
+
+    document.addEventListener("mousemove", e => {
+      if (!tooltipEl || tooltipEl.style.display === "none") return;
+      // Keep anchored; do nothing on move for stability
+    }, true);
+
+    document.addEventListener("mouseleave", e => {
+      const el = e.target.closest("[data-tip]");
+      if (!el) return;
+      hideTip();
+    }, true);
+
+    document.addEventListener("focusin", e => {
+      const el = e.target.closest("[data-tip]");
+      if (!el) return;
+      showTipNear(el, esc(el.getAttribute("data-tip")));
     });
-    (Array.isArray(children) ? children : [children]).forEach((c) => {
-      if (c === null || c === undefined) return;
-      if (typeof c === "string") node.appendChild(document.createTextNode(c));
-      else node.appendChild(c);
+
+    document.addEventListener("focusout", e => {
+      const el = e.target.closest("[data-tip]");
+      if (!el) return;
+      hideTip();
     });
-    return node;
   }
 
-  function q(id) {
-    return document.getElementById(id);
-  }
-
-  function setInputValue(id, value) {
-    const node = q(id);
-    if (!node) return;
-    if (node.type === "checkbox") node.checked = Boolean(value);
-    else node.value = value ?? "";
-  }
-
-  function getInputValue(id) {
-    const node = q(id);
-    if (!node) return null;
-    if (node.type === "checkbox") return node.checked;
-    return node.value;
-  }
-
-  function parseYearWithinHorizon(v, startYear, years) {
-    const y = safeNum(v, NaN);
-    if (!Number.isFinite(y)) return null;
-    const minY = startYear;
-    const maxY = startYear + years - 1;
-    if (y < minY || y > maxY) return null;
-    return Math.trunc(y);
-  }
-
-  function rangeToIndices(yearFrom, yearTo, startYear, years) {
-    const yf = parseYearWithinHorizon(yearFrom, startYear, years);
-    const yt = parseYearWithinHorizon(yearTo, startYear, years);
-    if (yf === null || yt === null) return null;
-    const a = Math.min(yf, yt);
-    const b = Math.max(yf, yt);
-    const i0 = a - startYear;
-    const i1 = b - startYear;
-    return { i0, i1 };
-  }
-
-  function discountFactor(r, t) {
-    return 1 / Math.pow(1 + r, t);
-  }
-
-  function deepClone(obj) {
-    return JSON.parse(JSON.stringify(obj));
-  }
-
-  /********************************************************************
-   * Default sample state (faba bean example)
-   ********************************************************************/
-  function buildSampleState() {
-    const out1 = { id: uid("out"), name: "Yield increase", unit: "t/ha", valuePerUnit: 450, notes: "Farm gate price", source: "Example data" };
-    const out2 = { id: uid("out"), name: "Nitrogen saving", unit: "kg N/ha", valuePerUnit: 2.2, notes: "Equivalent fertiliser value", source: "Example data" };
-
-    const t0 = {
-      id: uid("trt"),
-      name: "Control (business as usual)",
-      isControl: true,
-      maxAreaHa: 100,
-      labourCostPerHa: 0,
-      inputCostPerHa: 0,
-      notes: "Baseline management",
-      source: "Example",
-      outputs: [
-        { id: uid("to"), outputId: out1.id, qtyPerHa: 0.0, yearFrom: 2026, yearTo: 2030, notes: "" },
-        { id: uid("to"), outputId: out2.id, qtyPerHa: 0.0, yearFrom: 2026, yearTo: 2030, notes: "" },
-      ],
-    };
-
-    const t1 = {
-      id: uid("trt"),
-      name: "Soil amendment A",
-      isControl: false,
-      maxAreaHa: 100,
-      labourCostPerHa: 18,
-      inputCostPerHa: 55,
-      notes: "Moderate cost, moderate uplift",
-      source: "Example",
-      outputs: [
-        { id: uid("to"), outputId: out1.id, qtyPerHa: 0.35, yearFrom: 2026, yearTo: 2030, notes: "Trial mean" },
-        { id: uid("to"), outputId: out2.id, qtyPerHa: 12, yearFrom: 2026, yearTo: 2030, notes: "Assumed saving" },
-      ],
-    };
-
-    const t2 = {
-      id: uid("trt"),
-      name: "Soil amendment B",
-      isControl: false,
-      maxAreaHa: 100,
-      labourCostPerHa: 22,
-      inputCostPerHa: 85,
-      notes: "Higher cost, higher uplift",
-      source: "Example",
-      outputs: [
-        { id: uid("to"), outputId: out1.id, qtyPerHa: 0.55, yearFrom: 2026, yearTo: 2030, notes: "Trial mean" },
-        { id: uid("to"), outputId: out2.id, qtyPerHa: 15, yearFrom: 2026, yearTo: 2030, notes: "Assumed saving" },
-      ],
-    };
-
-    const b1 = {
-      id: uid("ben"),
-      name: "Avoided disease loss (project-wide)",
-      annualValue: 3000,
-      yearFrom: 2027,
-      yearTo: 2030,
-      notes: "Optional benefit not captured by output rows",
-      source: "Example",
-    };
-
-    const c1 = {
-      id: uid("cst"),
-      name: "Training and extension (project-wide)",
-      annualValue: 2500,
-      yearFrom: 2026,
-      yearTo: 2027,
-      notes: "Coordination and training",
-      source: "Example",
-    };
-
-    return {
-      version: "2.0.0",
-      toolName: TOOL_NAME,
-      createdAt: new Date().toISOString(),
-      project: {
-        projectName: "Faba bean soil amendment trial",
-        projectLead: "",
-        analystNames: "",
-        projectTeam: "",
-        organisation: ORG_NAME,
-        lastUpdated: todayISO(),
-        contactEmail: "",
-        contactPhone: "",
-        projectSummary: "Example scenario for demonstration. Replace via Excel workflow for your own farm context.",
-        projectGoal: "Improve yields and soil condition with practical on-farm treatments.",
-        withProject: "Adopt selected amendment(s) on the target area; benefits realised through yield gains and input savings.",
-        withoutProject: "Continue current practice (control) with no additional costs or benefits.",
-        projectObjectives: "Compare treatments against control using a snapshot results table and exportable indicators.",
-        projectActivities: "Trial management, input procurement, application, monitoring.",
-        stakeholderGroups: "Farmers, advisors, trial partners.",
-      },
-      settings: {
-        startYear: 2026,
-        projectStartYear: 2026,
-        years: 5,
-        systemType: "single",
-        discBase: 7.0,
-        discLow: 3.0,
-        discHigh: 10.0,
-        outputAssumptions: "Values are illustrative. Replace with local prices and trial estimates.",
-        mirrFinance: 7.0,
-        mirrReinvest: 7.0,
-        adoptLow: 0.6,
-        adoptBase: 0.85,
-        adoptHigh: 1.0,
-        allocateProjectItems: true,
-        riskLow: 0.05,
-        riskBase: 0.12,
-        riskHigh: 0.25,
-        rTech: 0.05,
-        rNonCoop: 0.03,
-        rSocio: 0.02,
-        rFin: 0.04,
-        rMan: 0.03,
-        simN: 1500,
-        targetBCR: 2,
-        randSeed: "",
-        simVarPct: 10,
-        simVaryOutputs: true,
-        simVaryTreatCosts: true,
-        simVaryInputCosts: false,
-      },
-      outputs: [out1, out2],
-      treatments: [t0, t1, t2],
-      benefits: [b1],
-      costs: [c1],
-      ui: {
-        activeTab: "intro",
-        rankMetric: "bcr",
-        resultsViewMode: "absolute",
-        columnsPerPage: 6,
-        showDeltas: true,
-        matrixStart: 0,
-      },
-      cache: {
-        lastResults: null,
-        lastResultsMeta: null,
-      },
-      excel: {
-        parsed: null,
-        parsedSummary: null,
-      },
-    };
-  }
-
-  let STATE = buildSampleState();
-
-  /********************************************************************
-   * Core model: build annual cashflows and PV indicators
-   ********************************************************************/
-  function ensureSingleControl(state) {
-    const trts = state.treatments || [];
-    if (trts.length === 0) return;
-    const controls = trts.filter((t) => Boolean(t.isControl));
-    if (controls.length === 0) {
-      trts[0].isControl = true;
-      toast("No control flagged. The first treatment has been set as the control.", "warn", 4500);
-      return;
+  // -----------------------------
+  // MODEL
+  // -----------------------------
+  const model = {
+    toolName: TOOL_NAME,
+    project: {
+      name: "Faba Beans: Soil amendment trial economics",
+      lead: "Project lead",
+      analysts: "Farm economics team",
+      team: "Trial team",
+      organisation: "Newcastle Business School, The University of Newcastle",
+      contactEmail: "",
+      contactPhone: "",
+      summary:
+        "Decision support comparing faba bean soil amendment treatments against a control using cost–benefit analysis.",
+      objectives: "Compare treatments to control using NPV, PV benefits, PV costs, BCR, ROI, and ranking.",
+      activities: "Load treatments (Excel-first), validate inputs, calculate CBA, export results, and generate AI interpretation prompts.",
+      stakeholders: "Producers, agronomists, agencies, research partners.",
+      lastUpdated: new Date().toISOString().slice(0, 10),
+      goal:
+        "Support farmers to understand why treatments perform well or poorly economically, and what drivers matter most.",
+      withProject:
+        "Growers use the tool to compare treatment economics transparently, including underperforming options, and explore improvements.",
+      withoutProject:
+        "Decisions rely on partial information with limited comparability across treatments."
+    },
+    time: {
+      startYear: new Date().getFullYear(),
+      years: 10,
+      discBase: 7,
+      discLow: 4,
+      discHigh: 10,
+      mirrFinance: 6,
+      mirrReinvest: 4,
+      discountSchedule: JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_SCHEDULE))
+    },
+    adoption: { base: 0.9, low: 0.6, high: 1.0 },
+    risk: {
+      base: 0.15,
+      low: 0.05,
+      high: 0.3
+    },
+    outputsMeta: {
+      systemType: "single",
+      assumptions:
+        "Outputs are valued per hectare using user-specified unit values. Treatment deltas represent differences versus control (e.g. yield uplift t/ha)."
+    },
+    outputs: [
+      { id: uid(), name: "Grain yield", unit: "t/ha", value: 450, source: "Excel or user input" }
+    ],
+    // Each treatment is an alternative; comparisons are computed versus the control treatment.
+    treatments: [
+      {
+        id: uid(),
+        name: "Control",
+        isControl: true,
+        area: 100,
+        adoption: 1,
+        deltas: {}, // per-output delta vs control (control should be 0)
+        labourCost: 0, // $/ha per year (operating)
+        materialsCost: 0, // $/ha per year (operating)
+        servicesCost: 0, // $/ha per year (operating)
+        capitalCost: 0, // $ in year 0 (lump sum)
+        notes: "Baseline practice."
+      }
+    ],
+    sim: {
+      n: 1000,
+      seed: null,
+      variationPct: 20,
+      varyOutputs: true,
+      varyTreatCosts: true
     }
-    if (controls.length > 1) {
-      const keep = controls[0].id;
-      trts.forEach((t) => (t.isControl = t.id === keep));
-      toast("Multiple controls were flagged. Only the first control has been kept.", "warn", 4500);
+  };
+
+  // Ensure deltas exist for outputs
+  function ensureTreatmentDeltas() {
+    model.treatments.forEach(t => {
+      if (!t.deltas || typeof t.deltas !== "object") t.deltas = {};
+      model.outputs.forEach(o => {
+        if (!(o.id in t.deltas)) t.deltas[o.id] = 0;
+      });
+    });
+  }
+
+  // -----------------------------
+  // DEFAULT DATA (Faba beans 2022) — clean, tool-ready seed
+  // - This is a fallback. Uploaded Excel always overrides the default for analysis.
+  // -----------------------------
+  const DEFAULT_FABA_2022_TREATMENTS = [
+    { name: "Control", isControl: true, yieldUpliftTHa: 0, treatInputCostPerHa: 0 },
+    { name: "Deep OM (CP1)", isControl: false, yieldUpliftTHa: -1.02, treatInputCostPerHa: 16500 },
+    { name: "Deep OM (CP1) + liq. Gypsum (CHT)", isControl: false, yieldUpliftTHa: -0.13, treatInputCostPerHa: 16850 },
+    { name: "Deep Ripping", isControl: false, yieldUpliftTHa: 0.54, treatInputCostPerHa: 0 },
+    { name: "Deep Carbon-coated mineral (CCM)", isControl: false, yieldUpliftTHa: -0.07, treatInputCostPerHa: 3225 },
+    { name: "Deep OM + Gypsum (CP2)", isControl: false, yieldUpliftTHa: 0.55, treatInputCostPerHa: 24000 },
+    { name: "Surface Silicon", isControl: false, yieldUpliftTHa: -0.02, treatInputCostPerHa: 1000 },
+    { name: "Deep liq. NPKS", isControl: false, yieldUpliftTHa: 0.58, treatInputCostPerHa: 2200 },
+    { name: "Deep Gypsum", isControl: false, yieldUpliftTHa: 0.09, treatInputCostPerHa: 500 },
+    { name: "Deep liq. Gypsum (CHT)", isControl: false, yieldUpliftTHa: -0.20, treatInputCostPerHa: 350 },
+    { name: "Deep OM (CP1) + PAM", isControl: false, yieldUpliftTHa: 1.07, treatInputCostPerHa: 18000 },
+    { name: "Deep OM (CP1) + Carbon-coated mineral (CCM)", isControl: false, yieldUpliftTHa: -0.32, treatInputCostPerHa: 21225 }
+  ];
+
+  function seedDefaultTreatmentsIfNeeded() {
+    const hasMany = Array.isArray(model.treatments) && model.treatments.length > 1;
+    if (hasMany) return;
+
+    const yieldOutput = model.outputs.find(o => o.name.toLowerCase().includes("yield"));
+    const yieldId = yieldOutput ? yieldOutput.id : model.outputs[0]?.id;
+
+    model.treatments = DEFAULT_FABA_2022_TREATMENTS.map(row => {
+      const t = {
+        id: uid(),
+        name: row.name,
+        isControl: !!row.isControl,
+        area: 100,
+        adoption: 1,
+        deltas: {},
+        labourCost: 0,
+        materialsCost: Number(row.treatInputCostPerHa || 0), // operating $/ha (treatment input)
+        servicesCost: 0,
+        capitalCost: 0,
+        notes: row.isControl ? "Baseline practice." : "Seeded from the 2022 faba bean table (fallback)."
+      };
+      model.outputs.forEach(o => (t.deltas[o.id] = 0));
+      if (yieldId) t.deltas[yieldId] = Number(row.yieldUpliftTHa || 0);
+      return t;
+    });
+
+    ensureTreatmentDeltas();
+  }
+
+  // -----------------------------
+  // STORAGE (Excel-first default: uploaded data is the new default)
+  // -----------------------------
+  function saveModel() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(model));
+    } catch (e) {
+      // ignore
     }
   }
 
-  function getControl(state) {
-    ensureSingleControl(state);
-    return (state.treatments || []).find((t) => t.isControl) || null;
+  function loadModel() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return false;
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === "object") {
+        // shallow merge, keep functions local
+        Object.assign(model, obj);
+        // guard required nested objects
+        if (!model.toolName) model.toolName = TOOL_NAME;
+        if (!model.time) model.time = {};
+        if (!model.time.discountSchedule) model.time.discountSchedule = JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_SCHEDULE));
+        if (!model.project) model.project = {};
+        ensureTreatmentDeltas();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
   }
 
-  function buildLookups(state) {
-    const outById = new Map((state.outputs || []).map((o) => [o.id, o]));
-    const trtById = new Map((state.treatments || []).map((t) => [t.id, t]));
-    return { outById, trtById };
-  }
-
-  function effectiveAreaHa(treatment, adoptionMultiplier) {
-    const area = safeNum(treatment.maxAreaHa, 0);
-    const adopt = clamp(safeNum(adoptionMultiplier, 1), 0, 1);
-    return area * adopt;
-  }
-
-  function allocateShareByArea(state, treatId, adoptionMultiplier) {
-    const trts = state.treatments || [];
-    const total = trts.reduce((s, t) => s + effectiveAreaHa(t, adoptionMultiplier), 0);
-    if (total <= 0) return 0;
-    const t = trts.find((x) => x.id === treatId);
-    if (!t) return 0;
-    return effectiveAreaHa(t, adoptionMultiplier) / total;
-  }
-
-  function buildAnnualStreamsForTreatment(state, treatment) {
-    const s = state.settings;
-    const startYear = Math.trunc(safeNum(s.startYear, new Date().getFullYear()));
-    const years = Math.max(1, Math.trunc(safeNum(s.years, 5)));
-    const adoption = clamp(safeNum(s.adoptBase, 1), 0, 1);
-    const risk = clamp(safeNum(s.riskBase, 0), 0, 1);
-    const allocate = Boolean(s.allocateProjectItems);
-
-    const { outById } = buildLookups(state);
-
-    const effArea = effectiveAreaHa(treatment, adoption);
-    const areaShare = allocate ? allocateShareByArea(state, treatment.id, adoption) : 1;
-
-    const benefit = new Array(years).fill(0);
-    const cost = new Array(years).fill(0);
-
-    // Treatment variable costs per ha (labour + inputs), applied each year from projectStartYear onwards
-    const projectStartYear = Math.trunc(safeNum(s.projectStartYear, startYear));
-    const projectStartIndex = clamp(projectStartYear - startYear, 0, years - 1);
-
-    const labour = safeNum(treatment.labourCostPerHa, 0);
-    const inputs = safeNum(treatment.inputCostPerHa, 0);
-    const varCostAnnual = (labour + inputs) * effArea;
-    for (let t = projectStartIndex; t < years; t++) cost[t] += varCostAnnual;
-
-    // Output-based benefits (qty/ha * value/unit * effArea), within year ranges
-    (treatment.outputs || []).forEach((row) => {
-      const out = outById.get(row.outputId);
-      if (!out) return;
-      const r = rangeToIndices(row.yearFrom, row.yearTo, startYear, years);
-      if (!r) return;
-      const qty = safeNum(row.qtyPerHa, 0);
-      const val = safeNum(out.valuePerUnit, 0);
-      const annual = qty * val * effArea;
-      for (let t = r.i0; t <= r.i1; t++) benefit[t] += annual;
-    });
-
-    // Project-wide additional benefits and costs (allocated or applied to all equally)
-    (state.benefits || []).forEach((b) => {
-      const r = rangeToIndices(b.yearFrom, b.yearTo, startYear, years);
-      if (!r) return;
-      const annual = safeNum(b.annualValue, 0) * areaShare;
-      for (let t = r.i0; t <= r.i1; t++) benefit[t] += annual;
-    });
-
-    (state.costs || []).forEach((c) => {
-      const r = rangeToIndices(c.yearFrom, c.yearTo, startYear, years);
-      if (!r) return;
-      const annual = safeNum(c.annualValue, 0) * areaShare;
-      for (let t = r.i0; t <= r.i1; t++) cost[t] += annual;
-    });
-
-    // Risk reduces realised benefits (not costs)
-    for (let t = 0; t < years; t++) benefit[t] = benefit[t] * (1 - risk);
-
-    return { benefit, cost, effArea, adoption, risk, startYear, years };
-  }
-
-  function pvFromStream(stream, discRate) {
-    const r = clamp(safeNum(discRate, 0), -0.99, 10);
+  // -----------------------------
+  // CASHFLOW + CBA (per treatment, compared to control)
+  // -----------------------------
+  function presentValue(series, ratePct) {
     let pv = 0;
-    for (let t = 0; t < stream.length; t++) pv += stream[t] * discountFactor(r, t);
+    for (let t = 0; t < series.length; t++) pv += series[t] / Math.pow(1 + ratePct / 100, t);
     return pv;
   }
 
-  function computeIndicatorsForTreatment(state, treatment) {
-    const s = state.settings;
-    const discBasePct = safeNum(s.discBase, 7.0);
-    const r = discBasePct / 100;
+  function irr(cf) {
+    const hasPos = cf.some(v => v > 0);
+    const hasNeg = cf.some(v => v < 0);
+    if (!hasPos || !hasNeg) return NaN;
 
-    const { benefit, cost, effArea, adoption, risk } = buildAnnualStreamsForTreatment(state, treatment);
-    const pvB = pvFromStream(benefit, r);
-    const pvC = pvFromStream(cost, r);
-    const npv = pvB - pvC;
+    const npvAt = r => cf.reduce((acc, v, t) => acc + v / Math.pow(1 + r, t), 0);
 
-    // Ratios: handle divide-by-zero robustly
-    const bcr = pvC > 0 ? pvB / pvC : (pvB > 0 ? Infinity : 0);
-    const roi = pvC > 0 ? npv / pvC : (npv > 0 ? Infinity : 0);
+    let lo = -0.99, hi = 5.0;
+    let nLo = npvAt(lo), nHi = npvAt(hi);
+    if (nLo * nHi > 0) {
+      for (let k = 0; k < 30 && nLo * nHi > 0; k++) {
+        hi *= 1.5;
+        nHi = npvAt(hi);
+      }
+      if (nLo * nHi > 0) return NaN;
+    }
 
-    return {
-      treatmentId: treatment.id,
-      treatmentName: treatment.name,
-      isControl: Boolean(treatment.isControl),
-      effArea,
-      adoption,
-      risk,
-      pvBenefits: pvB,
-      pvCosts: pvC,
-      npv,
-      bcr,
-      roi,
-      annualBenefit: benefit,
-      annualCost: cost,
-    };
+    for (let i = 0; i < 90; i++) {
+      const mid = (lo + hi) / 2;
+      const nMid = npvAt(mid);
+      if (Math.abs(nMid) < 1e-8) return mid * 100;
+      if (nLo * nMid <= 0) {
+        hi = mid;
+        nHi = nMid;
+      } else {
+        lo = mid;
+        nLo = nMid;
+      }
+    }
+    return ((lo + hi) / 2) * 100;
   }
 
-  function computeAllResults(state) {
-    ensureSingleControl(state);
-    const indicators = (state.treatments || []).map((t) => computeIndicatorsForTreatment(state, t));
+  function mirr(cf, financeRatePct, reinvestRatePct) {
+    const n = cf.length - 1;
+    const fr = financeRatePct / 100;
+    const rr = reinvestRatePct / 100;
+    let pvNeg = 0;
+    let fvPos = 0;
+    for (let t = 0; t <= n; t++) {
+      const v = cf[t];
+      if (v < 0) pvNeg += v / Math.pow(1 + fr, t);
+      if (v > 0) fvPos += v * Math.pow(1 + rr, n - t);
+    }
+    if (pvNeg === 0) return NaN;
+    const m = Math.pow(-fvPos / pvNeg, 1 / n) - 1;
+    return m * 100;
+  }
 
-    const rankMetric = (state.ui?.rankMetric || "bcr").toLowerCase();
-    const metricKey = rankMetric === "npv" ? "npv" : rankMetric === "roi" ? "roi" : "bcr";
+  function payback(cf, ratePct) {
+    let cum = 0;
+    for (let t = 0; t < cf.length; t++) {
+      cum += cf[t] / Math.pow(1 + ratePct / 100, t);
+      if (cum >= 0) return t;
+    }
+    return null;
+  }
 
-    const ranked = [...indicators].sort((a, b) => {
-      const av = a[metricKey];
-      const bv = b[metricKey];
-      const aN = Number.isFinite(av) ? av : -Infinity;
-      const bN = Number.isFinite(bv) ? bv : -Infinity;
-      return bN - aN;
+  function computeTreatmentCashflows(t, opts) {
+    const N = Number(opts?.years ?? model.time.years) || 10;
+    const adoptMul = clamp(Number(opts?.adoptMul ?? model.adoption.base) || 0, 0, 1);
+    const risk = clamp(Number(opts?.risk ?? model.risk.base) || 0, 0, 1);
+
+    const benefit = new Array(N + 1).fill(0);
+    const cost = new Array(N + 1).fill(0);
+
+    const area = Number(t.area) || 0;
+    const adoption = clamp(Number(t.adoption ?? 1), 0, 1);
+    const A = adoptMul * adoption;
+    const R = 1 - risk;
+
+    // Benefits are annual for years 1..N.
+    let valuePerHa = 0;
+    model.outputs.forEach(o => {
+      const delta = Number(t.deltas?.[o.id] ?? 0) || 0;
+      const v = Number(o.value) || 0;
+      valuePerHa += delta * v;
     });
 
-    // Assign ranks (1 best). Stable tie-handling via metric + name.
-    const ranks = new Map();
-    ranked.forEach((row, i) => ranks.set(row.treatmentId, i + 1));
-    indicators.forEach((row) => (row.rank = ranks.get(row.treatmentId) || null));
+    const annualBenefit = valuePerHa * area * A * R;
 
-    const control = indicators.find((x) => x.isControl) || null;
+    // Costs: operating ($/ha) annually (years 1..N), capital year 0 (lump sum).
+    const opPerHa =
+      (Number(t.labourCost) || 0) +
+      (Number(t.materialsCost) || 0) +
+      (Number(t.servicesCost) || 0);
 
-    return {
-      generatedAt: new Date().toISOString(),
-      metricKey,
-      indicators,
-      control,
-    };
+    const annualCost = opPerHa * area * A; // if adoption is partial, operating scales with adoption
+    const capY0 = (Number(t.capitalCost) || 0); // capital is year-0; assumed incurred if adopting at all
+    const capScaled = capY0 * clamp(A, 0, 1);
+
+    cost[0] += capScaled;
+    for (let y = 1; y <= N; y++) {
+      benefit[y] += annualBenefit;
+      cost[y] += annualCost;
+    }
+
+    const cf = benefit.map((b, i) => b - cost[i]);
+    return { benefit, cost, cf };
   }
 
-  /********************************************************************
-   * Results matrix rendering (control alongside treatments)
-   ********************************************************************/
-  const MATRIX_ROWS = [
-    { key: "npv", label: "Net present value (NPV)", fmt: (x) => fmtCurrency.format(x) },
-    { key: "pvBenefits", label: "Present value of benefits (PV benefits)", fmt: (x) => fmtCurrency.format(x) },
-    { key: "pvCosts", label: "Present value of costs (PV costs)", fmt: (x) => fmtCurrency.format(x) },
-    { key: "bcr", label: "Benefit–cost ratio (BCR)", fmt: (x) => (x === Infinity ? "∞" : fmtNumber3.format(x)) },
-    { key: "roi", label: "Return on investment (ROI)", fmt: (x) => (x === Infinity ? "∞" : fmtNumber3.format(x)) },
-    { key: "rank", label: "Ranking (selected metric)", fmt: (x) => (x == null ? "n/a" : String(x)) },
-  ];
+  function computeMetricsFromSeries(benefit, cost, cf, ratePct) {
+    const pvBenefits = presentValue(benefit, ratePct);
+    const pvCosts = presentValue(cost, ratePct);
+    const npv = pvBenefits - pvCosts;
+    const bcr = pvCosts > 0 ? pvBenefits / pvCosts : NaN;
+    const roi = pvCosts > 0 ? ((pvBenefits - pvCosts) / pvCosts) * 100 : NaN;
+    const irrVal = irr(cf);
+    const mirrVal = mirr(cf, model.time.mirrFinance, model.time.mirrReinvest);
+    const pb = payback(cf, ratePct);
+    return { pvBenefits, pvCosts, npv, bcr, roi, irrVal, mirrVal, paybackYears: pb };
+  }
 
-  function buildMatrixData(state, results) {
-    const viewMode = state.ui?.resultsViewMode || "absolute";
-    const showDeltas = Boolean(state.ui?.showDeltas);
-    const control = results.control;
+  function getControlTreatment() {
+    const t = model.treatments.find(x => !!x.isControl);
+    return t || model.treatments[0] || null;
+  }
 
-    const cols = results.indicators
+  function computeComparison(opts) {
+    const rate = Number(opts?.rate ?? model.time.discBase) || 7;
+    const years = Number(opts?.years ?? model.time.years) || 10;
+    const adoptMul = Number(opts?.adoptMul ?? model.adoption.base) ?? 0.9;
+    const risk = Number(opts?.risk ?? model.risk.base) ?? 0.15;
+
+    const control = getControlTreatment();
+    if (!control) return { control: null, rows: [], meta: { rate, years, adoptMul, risk } };
+
+    const cSeries = computeTreatmentCashflows(control, { years, adoptMul, risk });
+    const cAbs = computeMetricsFromSeries(cSeries.benefit, cSeries.cost, cSeries.cf, rate);
+
+    const rows = model.treatments.map(t => {
+      const s = computeTreatmentCashflows(t, { years, adoptMul, risk });
+      const abs = computeMetricsFromSeries(s.benefit, s.cost, s.cf, rate);
+
+      // Incremental vs control (difference)
+      const dBenefit = s.benefit.map((v, i) => v - (cSeries.benefit[i] || 0));
+      const dCost = s.cost.map((v, i) => v - (cSeries.cost[i] || 0));
+      const dCf = dBenefit.map((v, i) => v - (dCost[i] || 0));
+
+      const inc = computeMetricsFromSeries(dBenefit, dCost, dCf, rate);
+
+      // For deltas: control should be 0
+      return {
+        id: t.id,
+        name: t.name,
+        isControl: !!t.isControl,
+        area: Number(t.area) || 0,
+        adoption: clamp(Number(t.adoption ?? 1), 0, 1),
+        abs,
+        inc,
+        series: { abs: s, inc: { benefit: dBenefit, cost: dCost, cf: dCf } }
+      };
+    });
+
+    // Ranking by incremental NPV (primary), then incremental BCR (secondary), then name.
+    const ranked = rows
       .slice()
       .sort((a, b) => {
         if (a.isControl && !b.isControl) return -1;
         if (!a.isControl && b.isControl) return 1;
-        return (a.rank ?? 9999) - (b.rank ?? 9999);
-      });
 
-    // In relative mode, show deltas vs control; control column stays but shows baseline marker
-    const rows = MATRIX_ROWS.map((r) => {
-      const cells = cols.map((c) => {
-        if (viewMode === "relative" && control) {
-          if (c.isControl) {
-            return { value: 0, display: "0", delta: null, isControl: true };
+        const an = Number(a.inc.npv);
+        const bn = Number(b.inc.npv);
+        if (isFinite(an) && isFinite(bn) && an !== bn) return bn - an;
+
+        const ab = Number(a.inc.bcr);
+        const bb = Number(b.inc.bcr);
+        if (isFinite(ab) && isFinite(bb) && ab !== bb) return bb - ab;
+
+        return String(a.name).localeCompare(String(b.name));
+      })
+      .map((r, idx) => ({ ...r, rank: idx + 1 }));
+
+    return {
+      control: {
+        name: control.name,
+        abs: cAbs,
+        series: cSeries
+      },
+      rows: ranked,
+      meta: { rate, years, adoptMul, risk }
+    };
+  }
+
+  // -----------------------------
+  // SNAPSHOT RESULTS RENDER (vertical table)
+  // -----------------------------
+  function classifyDeltaCell(v, betterIsHigher = true) {
+    if (!isFinite(v) || v === 0) return "tool2-cell-neutral";
+    const good = betterIsHigher ? v > 0 : v < 0;
+    return good ? "tool2-cell-good" : "tool2-cell-bad";
+  }
+
+  function renderResultsComparison() {
+    injectTool2CSS();
+
+    const rate = Number($("#discBase")?.value ?? model.time.discBase) || model.time.discBase;
+    const years = Number($("#years")?.value ?? model.time.years) || model.time.years;
+    const adoptMul = Number($("#adoptBase")?.value ?? model.adoption.base) ?? model.adoption.base;
+    const risk = Number($("#riskBase")?.value ?? model.risk.base) ?? model.risk.base;
+
+    const comp = computeComparison({ rate, years, adoptMul, risk });
+    if (!comp.control || !comp.rows.length) {
+      setHTML("#resultsMain", `<div class="tool2-help">No treatments available. Upload an Excel file or load the sample template.</div>`);
+      return;
+    }
+
+    const rows = comp.rows;
+    const controlRow = rows.find(r => r.isControl) || rows[0];
+
+    // Headline KPIs (snapshot)
+    const nonControl = rows.filter(r => !r.isControl);
+    const bestNPV = nonControl.slice().sort((a, b) => (b.inc.npv || -Infinity) - (a.inc.npv || -Infinity))[0] || null;
+    const bestBCR = nonControl.slice().sort((a, b) => (b.inc.bcr || -Infinity) - (a.inc.bcr || -Infinity))[0] || null;
+
+    const kpisHTML = `
+      <div class="tool2-kpis">
+        <div class="tool2-kpi">
+          <div class="lbl">Control</div>
+          <div class="val">${esc(controlRow.name)}</div>
+          <div class="sub">Comparison baseline (not hidden)</div>
+        </div>
+        <div class="tool2-kpi">
+          <div class="lbl">Top by ΔNPV vs control</div>
+          <div class="val">${bestNPV ? esc(bestNPV.name) : "n/a"}</div>
+          <div class="sub">${bestNPV ? money(bestNPV.inc.npv) : "n/a"}</div>
+        </div>
+        <div class="tool2-kpi">
+          <div class="lbl">Top by ΔBCR vs control</div>
+          <div class="val">${bestBCR ? esc(bestBCR.name) : "n/a"}</div>
+          <div class="sub">${bestBCR ? fmt(bestBCR.inc.bcr) : "n/a"}</div>
+        </div>
+        <div class="tool2-kpi">
+          <div class="lbl">Scenario</div>
+          <div class="val">${years} years, ${fmt(rate)}% discount</div>
+          <div class="sub">Adoption ${fmt(adoptMul * 100)}%, risk ${fmt(risk * 100)}%</div>
+        </div>
+      </div>
+    `;
+
+    // Comparison table: indicators as rows, treatments as columns (control included)
+    const treatmentCols = rows; // already includes control (ranked with control first)
+    const colHeaders = treatmentCols
+      .map(r => {
+        const tag = r.isControl ? `<span class="tool2-muted">(Control)</span>` : `<span class="tool2-muted">Rank ${r.rank}</span>`;
+        return `<th>${esc(r.name)}<div class="tool2-small tool2-muted">${tag}</div></th>`;
+      })
+      .join("");
+
+    const metricRows = [];
+
+    // Minimal required metrics (absolute + delta rows for clarity and copy/paste)
+    const metrics = [
+      {
+        key: "npv",
+        label: "Net present value (NPV)",
+        tip:
+          "NPV is the present value of benefits minus costs. Positive ΔNPV vs control means the treatment outperforms the control financially under the chosen assumptions.",
+        fmt: money,
+        betterHigher: true
+      },
+      {
+        key: "pvBenefits",
+        label: "Present value of benefits",
+        tip:
+          "PV benefits discounts future benefits back to today. Higher PV benefits can come from higher yield uplift, higher prices, higher adoption, or lower risk.",
+        fmt: money,
+        betterHigher: true
+      },
+      {
+        key: "pvCosts",
+        label: "Present value of costs",
+        tip:
+          "PV costs discounts future costs back to today. Higher PV costs can come from higher input costs, labour, services, or capital outlays.",
+        fmt: money,
+        betterHigher: false
+      },
+      {
+        key: "bcr",
+        label: "Benefit–cost ratio (BCR)",
+        tip:
+          "BCR is PV benefits divided by PV costs. A higher BCR indicates more benefit per dollar of cost. This tool reports ΔBCR vs control as an interpretive aid, not a rule.",
+        fmt: x => (isFinite(x) ? fmt(x) : "n/a"),
+        betterHigher: true
+      },
+      {
+        key: "roi",
+        label: "Return on investment (ROI)",
+        tip:
+          "ROI is (PV benefits − PV costs) / PV costs. It summarises proportional return. High ROI can occur even when total dollars are modest.",
+        fmt: x => (isFinite(x) ? fmt(x) + "%" : "n/a"),
+        betterHigher: true
+      },
+      {
+        key: "rank",
+        label: "Ranking (by ΔNPV vs control)",
+        tip:
+          "Ranking sorts treatments by incremental NPV compared to the control. It does not dictate a decision: it is a transparent summary under the selected assumptions.",
+        fmt: x => (isFinite(x) ? String(x) : "n/a"),
+        betterHigher: false
+      }
+    ];
+
+    // Helper: metric row builder
+    function buildMetricRow(label, tip, getValue, deltaMode, betterHigher, formatFn) {
+      const tipIcon = `<span class="tool2-tipicon" tabindex="0" role="img" aria-label="Help" data-tip="${esc(tip)}">i</span>`;
+      const headerCell = `<td>${esc(label)} ${tipIcon}<div class="tool2-small tool2-muted">${deltaMode ? "Difference vs control" : "Absolute"}</div></td>`;
+      const cells = treatmentCols
+        .map(r => {
+          const v = getValue(r);
+          let cls = "";
+          if (deltaMode) {
+            cls = classifyDeltaCell(v, betterHigher);
+          } else {
+            cls = r.isControl ? "tool2-cell-neutral" : "tool2-cell-neutral";
           }
-          const base = safeNum(control[r.key], 0);
-          const val = safeNum(c[r.key], 0);
-          const diff = val - base;
-          let display;
-          if (r.key === "rank") display = String((c.rank ?? 0) - (control.rank ?? 0));
-          else if (r.key === "bcr" || r.key === "roi") display = (diff === Infinity ? "∞" : fmtNumber3.format(diff));
-          else display = r.fmt(diff);
-          return { value: diff, display, delta: null, isControl: false };
-        }
+          return `<td class="${cls}">${esc(formatFn(v))}</td>`;
+        })
+        .join("");
+      return `<tr>${headerCell}${cells}</tr>`;
+    }
 
-        // Absolute mode
-        const val = c[r.key];
-        const display = r.key === "bcr" || r.key === "roi"
-          ? (val === Infinity ? "∞" : fmtNumber3.format(val))
-          : r.fmt(val);
+    // For each metric, include Absolute and Δ vs control
+    metrics.forEach(m => {
+      if (m.key === "rank") {
+        // absolute rank row only (delta not meaningful)
+        metricRows.push(
+          buildMetricRow(
+            m.label,
+            m.tip,
+            r => (r.isControl ? 1 : r.rank),
+            false,
+            m.betterHigher,
+            m.fmt
+          )
+        );
+        return;
+      }
 
-        // Inline delta vs control (optional)
-        let delta = null;
-        if (showDeltas && control && !c.isControl && r.key !== "rank") {
-          const base = safeNum(control[r.key], 0);
-          const v = safeNum(c[r.key], 0);
-          const diff = v - base;
-          if (r.key === "bcr" || r.key === "roi") delta = diff === Infinity ? "Δ ∞" : `Δ ${fmtNumber3.format(diff)}`;
-          else delta = `Δ ${fmtCurrency.format(diff)}`;
-        }
-        if (showDeltas && control && !c.isControl && r.key === "rank") {
-          const diff = (c.rank ?? 0) - (control.rank ?? 0);
-          delta = `Δ ${diff}`;
-        }
+      // Absolute
+      metricRows.push(
+        buildMetricRow(
+          m.label,
+          m.tip,
+          r => r.abs[m.key],
+          false,
+          m.betterHigher,
+          m.fmt
+        )
+      );
 
-        return { value: val, display, delta, isControl: c.isControl };
-      });
-
-      return { key: r.key, label: r.label, cells };
-    });
-
-    return { cols, rows, viewMode };
-  }
-
-  function renderResultsMatrix(state, results) {
-    const wrap = q("resultsMatrixScroll");
-    if (!wrap) return;
-
-    const ui = state.ui || {};
-    const columnsPerPage = Math.max(1, Math.trunc(safeNum(ui.columnsPerPage, 6)));
-    const matrixStart = Math.max(0, Math.trunc(safeNum(ui.matrixStart, 0)));
-
-    // Sort columns: control first, then by rank
-    const ordered = results.indicators
-      .slice()
-      .sort((a, b) => {
-        if (a.isControl && !b.isControl) return -1;
-        if (!a.isControl && b.isControl) return 1;
-        return (a.rank ?? 9999) - (b.rank ?? 9999);
-      });
-
-    const control = ordered.find((x) => x.isControl) || null;
-    const others = ordered.filter((x) => !x.isControl);
-
-    // Control must always appear alongside treatments
-    const window = others.slice(matrixStart, matrixStart + columnsPerPage);
-    const cols = control ? [control, ...window] : window;
-
-    const data = buildMatrixData(
-      { ...state, treatments: state.treatments, ui: state.ui },
-      { ...results, indicators: cols, control }
-    );
-
-    // Build table
-    const table = el("table", { class: "matrix-table", role: "table" });
-
-    const thead = el("thead");
-    const trh = el("tr");
-    trh.appendChild(el("th", { class: "sticky-col", scope: "col" }, ["Indicator"]));
-    data.cols.forEach((c) => {
-      const label = c.isControl ? `${c.treatmentName} (Control)` : c.treatmentName;
-      const sub = `Rank ${c.rank ?? "n/a"}`;
-      trh.appendChild(
-        el("th", { scope: "col", class: c.isControl ? "col-control" : "" }, [
-          el("div", { class: "col-title" }, [label]),
-          el("div", { class: "col-sub muted small" }, [sub]),
-        ])
+      // Delta vs control (use incremental metrics; control is 0 by construction)
+      metricRows.push(
+        buildMetricRow(
+          m.label,
+          m.tip,
+          r => (r.isControl ? 0 : r.inc[m.key]),
+          true,
+          m.betterHigher,
+          m.fmt
+        )
       );
     });
-    thead.appendChild(trh);
-    table.appendChild(thead);
 
-    const tbody = el("tbody");
-    data.rows.forEach((r) => {
-      const tr = el("tr");
-      tr.appendChild(el("th", { class: "sticky-col row-label", scope: "row" }, [r.label]));
-      r.cells.forEach((cell, idx) => {
-        const isCtrl = data.cols[idx]?.isControl;
-        const cellClass = isCtrl ? "cell control" : "cell";
-        const inner = el("div", { class: "cell-inner" }, [
-          el("div", { class: "cell-main" }, [cell.display]),
-          cell.delta ? el("div", { class: "cell-delta small muted" }, [cell.delta]) : null,
-        ]);
-        tr.appendChild(el("td", { class: cellClass }, [inner]));
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-
-    wrap.innerHTML = "";
-    wrap.appendChild(table);
-
-    // Window label and prev/next enablement
-    const label = q("matrixWindowLabel");
-    if (label) {
-      const totalOthers = others.length;
-      const from = totalOthers === 0 ? 0 : matrixStart + 1;
-      const to = Math.min(totalOthers, matrixStart + columnsPerPage);
-      label.textContent = `Showing control + treatments ${from} to ${to} of ${totalOthers}`;
-    }
-
-    const prev = q("matrixPrev");
-    const next = q("matrixNext");
-    if (prev) prev.disabled = matrixStart <= 0;
-    if (next) next.disabled = matrixStart + columnsPerPage >= others.length;
-  }
-
-  function updateSnapshotCards(results) {
-    const best = results.indicators.slice().sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999))[0] || null;
-    const worst = results.indicators.slice().sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0))[0] || null;
-    const control = results.control;
-
-    const bestEl = q("snapBest");
-    const bestSub = q("snapBestSub");
-    const worstEl = q("snapWorst");
-    const worstSub = q("snapWorstSub");
-    const ctrlEl = q("snapControl");
-    const ctrlSub = q("snapControlSub");
-
-    if (bestEl) bestEl.textContent = best ? best.treatmentName : "n/a";
-    if (worstEl) worstEl.textContent = worst ? worst.treatmentName : "n/a";
-    if (ctrlEl) ctrlEl.textContent = control ? control.treatmentName : "n/a";
-
-    const metricKey = results.metricKey;
-    const metricLabel = metricKey === "npv" ? "NPV" : metricKey === "roi" ? "ROI" : "BCR";
-    const showMetric = (x) => {
-      if (!x) return "n/a";
-      const v = x[metricKey];
-      if (metricKey === "npv") return fmtCurrency.format(v);
-      if (v === Infinity) return "∞";
-      return fmtNumber3.format(v);
-    };
-
-    if (bestSub) bestSub.textContent = best ? `${metricLabel}: ${showMetric(best)} | Rank ${best.rank}` : "n/a";
-    if (worstSub) worstSub.textContent = worst ? `${metricLabel}: ${showMetric(worst)} | Rank ${worst.rank}` : "n/a";
-    if (ctrlSub) ctrlSub.textContent = control ? `NPV: ${fmtCurrency.format(control.npv)} | BCR: ${control.bcr === Infinity ? "∞" : fmtNumber3.format(control.bcr)}` : "n/a";
-  }
-
-  function updateResultsAssumptions(state, results) {
-    const elAss = q("resultsAssumptions");
-    if (!elAss) return;
-
-    const s = state.settings;
-    const startYear = safeNum(s.startYear, 2026);
-    const years = safeNum(s.years, 5);
-    const disc = safeNum(s.discBase, 7);
-    const adopt = safeNum(s.adoptBase, 1);
-    const risk = safeNum(s.riskBase, 0);
-
-    const allocate = Boolean(s.allocateProjectItems);
-    const sys = safeStr(s.systemType, "single");
-
-    const control = results.control;
-
-    const lines = [];
-    lines.push(`Tool: ${TOOL_NAME}.`);
-    lines.push(`Analysis years: ${startYear} to ${startYear + years - 1} (${years} years).`);
-    lines.push(`Discount rate (base): ${fmtNumber2.format(disc)}%.`);
-    lines.push(`Adoption (base multiplier): ${fmtNumber2.format(adopt)}.`);
-    lines.push(`Overall risk (base): ${fmtPercent1.format(risk)} (reduces benefits, not costs).`);
-    lines.push(`Project-wide items: ${allocate ? "Allocated by effective area" : "Applied equally to each treatment scenario"}.`);
-    lines.push(`System type: ${sys}.`);
-    if (control) lines.push(`Control: ${control.treatmentName}.`);
-    elAss.textContent = lines.join(" ");
-  }
-
-  /********************************************************************
-   * CRUD rendering for inputs (Outputs, Treatments, Benefits, Costs)
-   ********************************************************************/
-  function renderOutputs(state) {
-    const root = q("outputsList");
-    if (!root) return;
-    root.innerHTML = "";
-
-    const items = state.outputs || [];
-    if (items.length === 0) {
-      root.appendChild(el("div", { class: "small muted" }, ["No outputs yet. Add an output to define monetised benefits."]));
-      return;
-    }
-
-    items.forEach((o) => {
-      const card = el("div", { class: "item-card" });
-      card.appendChild(el("div", { class: "item-head" }, [
-        el("div", { class: "item-title" }, [o.name || "Untitled output"]),
-        el("div", { class: "item-actions" }, [
-          el("button", {
-            type: "button",
-            class: "btn small ghost",
-            onClick: () => { removeOutput(o.id); },
-          }, ["Remove"]),
-        ]),
-      ]));
-
-      const grid = el("div", { class: "row-4" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Output name"]),
-          el("input", {
-            type: "text",
-            value: o.name ?? "",
-            onInput: (e) => { o.name = e.target.value; scheduleRecalc("Output updated"); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Unit"]),
-          el("input", {
-            type: "text",
-            value: o.unit ?? "",
-            onInput: (e) => { o.unit = e.target.value; scheduleRecalc(); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Value per unit (AUD)"]),
-          el("input", {
-            type: "number",
-            step: "0.01",
-            value: o.valuePerUnit ?? 0,
-            onInput: (e) => { o.valuePerUnit = safeNum(e.target.value, 0); scheduleRecalc(); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Source (optional)"]),
-          el("input", {
-            type: "text",
-            value: o.source ?? "",
-            onInput: (e) => { o.source = e.target.value; },
-          }),
-        ]),
-      ]);
-
-      card.appendChild(grid);
-
-      const notes = el("div", { class: "field" }, [
-        el("label", {}, ["Notes (optional)"]),
-        el("textarea", {
-          rows: "2",
-          onInput: (e) => { o.notes = e.target.value; },
-        }, []),
-      ]);
-      notes.querySelector("textarea").value = o.notes ?? "";
-      card.appendChild(notes);
-
-      root.appendChild(card);
-    });
-  }
-
-  function renderTreatments(state) {
-    const root = q("treatmentsList");
-    if (!root) return;
-    root.innerHTML = "";
-
-    const treatments = state.treatments || [];
-    if (treatments.length === 0) {
-      root.appendChild(el("div", { class: "small muted" }, ["No treatments yet. Add a control and one or more treatments."]));
-      return;
-    }
-
-    ensureSingleControl(state);
-
-    treatments.forEach((t) => {
-      const card = el("div", { class: "item-card" });
-
-      const head = el("div", { class: "item-head" }, [
-        el("div", { class: "item-title" }, [t.name || "Untitled treatment"]),
-        el("div", { class: "item-actions" }, [
-          el("button", { type: "button", class: "btn small", onClick: () => addTreatmentOutputRow(t.id) }, ["Add output row"]),
-          el("button", {
-            type: "button",
-            class: "btn small ghost",
-            onClick: () => { removeTreatment(t.id); },
-          }, ["Remove"]),
-        ]),
-      ]);
-
-      card.appendChild(head);
-
-      const row = el("div", { class: "row-4" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Treatment name"]),
-          el("input", {
-            type: "text",
-            value: t.name ?? "",
-            onInput: (e) => { t.name = e.target.value; scheduleRecalc(); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Control?"]),
-          (() => {
-            const sel = el("select", {
-              onChange: (e) => {
-                const yes = e.target.value === "true";
-                if (yes) {
-                  state.treatments.forEach((x) => (x.isControl = x.id === t.id));
-                } else {
-                  t.isControl = false;
-                }
-                ensureSingleControl(state);
-                scheduleRecalc("Control updated");
-                renderTreatments(state);
-              },
-            }, [
-              el("option", { value: "false" }, ["No"]),
-              el("option", { value: "true" }, ["Yes"]),
-            ]);
-            sel.value = t.isControl ? "true" : "false";
-            return sel;
-          })(),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Max area (ha)"]),
-          el("input", {
-            type: "number",
-            step: "1",
-            min: "0",
-            value: t.maxAreaHa ?? 0,
-            onInput: (e) => { t.maxAreaHa = safeNum(e.target.value, 0); scheduleRecalc(); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Source (optional)"]),
-          el("input", {
-            type: "text",
-            value: t.source ?? "",
-            onInput: (e) => { t.source = e.target.value; },
-          }),
-        ]),
-      ]);
-      card.appendChild(row);
-
-      const costRow = el("div", { class: "row-4" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Labour cost per ha (AUD/ha/year)"]),
-          el("input", {
-            type: "number",
-            step: "0.01",
-            value: t.labourCostPerHa ?? 0,
-            onInput: (e) => { t.labourCostPerHa = safeNum(e.target.value, 0); scheduleRecalc(); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Input cost per ha (AUD/ha/year)"]),
-          el("input", {
-            type: "number",
-            step: "0.01",
-            value: t.inputCostPerHa ?? 0,
-            onInput: (e) => { t.inputCostPerHa = safeNum(e.target.value, 0); scheduleRecalc(); },
-          }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Effective area (base)"]),
-          el("div", { class: "metric" }, [
-            el("div", { class: "value" }, [fmtNumber2.format(effectiveAreaHa(t, state.settings?.adoptBase ?? 1))]),
-            el("div", { class: "small muted" }, ["ha (max area × adoption)"]),
-          ]),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Quick note (optional)"]),
-          el("input", {
-            type: "text",
-            value: t.notes ?? "",
-            onInput: (e) => { t.notes = e.target.value; },
-          }),
-        ]),
-      ]);
-      card.appendChild(costRow);
-
-      // Treatment outputs table
-      const outTable = el("div", { class: "table-scroll" });
-      const table = el("table", { class: "summary-table" });
-      const thead = el("thead", {}, [
-        el("tr", {}, [
-          el("th", {}, ["Output"]),
-          el("th", {}, ["Qty per ha"]),
-          el("th", {}, ["From year"]),
-          el("th", {}, ["To year"]),
-          el("th", {}, ["Notes"]),
-          el("th", {}, [""]),
-        ]),
-      ]);
-      table.appendChild(thead);
-
-      const tbody = el("tbody");
-      (t.outputs || []).forEach((row) => {
-        const tr = el("tr");
-
-        // Output select
-        const outSel = el("select", {
-          onChange: (e) => { row.outputId = e.target.value; scheduleRecalc(); },
-        });
-        (state.outputs || []).forEach((o) => {
-          outSel.appendChild(el("option", { value: o.id }, [o.name || o.id]));
-        });
-        outSel.value = row.outputId ?? (state.outputs?.[0]?.id ?? "");
-
-        tr.appendChild(el("td", {}, [outSel]));
-
-        const qty = el("input", {
-          type: "number",
-          step: "0.01",
-          value: row.qtyPerHa ?? 0,
-          onInput: (e) => { row.qtyPerHa = safeNum(e.target.value, 0); scheduleRecalc(); },
-        });
-        tr.appendChild(el("td", {}, [qty]));
-
-        const yf = el("input", {
-          type: "number",
-          step: "1",
-          value: row.yearFrom ?? state.settings.startYear,
-          onInput: (e) => { row.yearFrom = safeNum(e.target.value, state.settings.startYear); scheduleRecalc(); },
-        });
-        tr.appendChild(el("td", {}, [yf]));
-
-        const yt = el("input", {
-          type: "number",
-          step: "1",
-          value: row.yearTo ?? (state.settings.startYear + state.settings.years - 1),
-          onInput: (e) => { row.yearTo = safeNum(e.target.value, state.settings.startYear); scheduleRecalc(); },
-        });
-        tr.appendChild(el("td", {}, [yt]));
-
-        const note = el("input", {
-          type: "text",
-          value: row.notes ?? "",
-          onInput: (e) => { row.notes = e.target.value; },
-        });
-        tr.appendChild(el("td", {}, [note]));
-
-        tr.appendChild(el("td", {}, [
-          el("button", { type: "button", class: "btn small ghost", onClick: () => removeTreatmentOutputRow(t.id, row.id) }, ["Remove"]),
-        ]));
-
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      outTable.appendChild(table);
-
-      card.appendChild(el("div", { class: "small muted", style: "margin-top:0.25rem;" }, [
-        "Output rows drive benefits (qty per ha × value per unit × effective area). Year ranges must sit within the analysis horizon.",
-      ]));
-      card.appendChild(outTable);
-
-      root.appendChild(card);
-    });
-  }
-
-  function renderBenefits(state) {
-    const root = q("benefitsList");
-    if (!root) return;
-    root.innerHTML = "";
-
-    const items = state.benefits || [];
-    if (items.length === 0) {
-      root.appendChild(el("div", { class: "small muted" }, ["No additional benefits yet. Add if you have benefits not captured by output quantities."]));
-      return;
-    }
-
-    items.forEach((b) => {
-      const card = el("div", { class: "item-card" });
-      card.appendChild(el("div", { class: "item-head" }, [
-        el("div", { class: "item-title" }, [b.name || "Untitled benefit"]),
-        el("div", { class: "item-actions" }, [
-          el("button", { type: "button", class: "btn small ghost", onClick: () => removeBenefit(b.id) }, ["Remove"]),
-        ]),
-      ]));
-
-      card.appendChild(el("div", { class: "row-4" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Benefit name"]),
-          el("input", { type: "text", value: b.name ?? "", onInput: (e) => { b.name = e.target.value; } }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Annual value (AUD/year)"]),
-          el("input", { type: "number", step: "0.01", value: b.annualValue ?? 0, onInput: (e) => { b.annualValue = safeNum(e.target.value, 0); scheduleRecalc(); } }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["From year"]),
-          el("input", { type: "number", step: "1", value: b.yearFrom ?? state.settings.startYear, onInput: (e) => { b.yearFrom = safeNum(e.target.value, state.settings.startYear); scheduleRecalc(); } }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["To year"]),
-          el("input", { type: "number", step: "1", value: b.yearTo ?? (state.settings.startYear + state.settings.years - 1), onInput: (e) => { b.yearTo = safeNum(e.target.value, state.settings.startYear); scheduleRecalc(); } }),
-        ]),
-      ]));
-
-      const notes = el("div", { class: "row-2" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Notes (optional)"]),
-          (() => {
-            const ta = el("textarea", { rows: "2", onInput: (e) => { b.notes = e.target.value; } });
-            ta.value = b.notes ?? "";
-            return ta;
-          })(),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Source (optional)"]),
-          el("input", { type: "text", value: b.source ?? "", onInput: (e) => { b.source = e.target.value; } }),
-        ]),
-      ]);
-      card.appendChild(notes);
-
-      root.appendChild(card);
-    });
-  }
-
-  function renderCosts(state) {
-    const root = q("costsList");
-    if (!root) return;
-    root.innerHTML = "";
-
-    const items = state.costs || [];
-    if (items.length === 0) {
-      root.appendChild(el("div", { class: "small muted" }, ["No project-wide costs yet. Add costs such as coordination, monitoring, training, or capital items."]));
-      return;
-    }
-
-    items.forEach((c) => {
-      const card = el("div", { class: "item-card" });
-      card.appendChild(el("div", { class: "item-head" }, [
-        el("div", { class: "item-title" }, [c.name || "Untitled cost"]),
-        el("div", { class: "item-actions" }, [
-          el("button", { type: "button", class: "btn small ghost", onClick: () => removeCost(c.id) }, ["Remove"]),
-        ]),
-      ]));
-
-      card.appendChild(el("div", { class: "row-4" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Cost name"]),
-          el("input", { type: "text", value: c.name ?? "", onInput: (e) => { c.name = e.target.value; } }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Annual value (AUD/year)"]),
-          el("input", { type: "number", step: "0.01", value: c.annualValue ?? 0, onInput: (e) => { c.annualValue = safeNum(e.target.value, 0); scheduleRecalc(); } }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["From year"]),
-          el("input", { type: "number", step: "1", value: c.yearFrom ?? state.settings.startYear, onInput: (e) => { c.yearFrom = safeNum(e.target.value, state.settings.startYear); scheduleRecalc(); } }),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["To year"]),
-          el("input", { type: "number", step: "1", value: c.yearTo ?? (state.settings.startYear + state.settings.years - 1), onInput: (e) => { c.yearTo = safeNum(e.target.value, state.settings.startYear); scheduleRecalc(); } }),
-        ]),
-      ]));
-
-      const notes = el("div", { class: "row-2" }, [
-        el("div", { class: "field" }, [
-          el("label", {}, ["Notes (optional)"]),
-          (() => {
-            const ta = el("textarea", { rows: "2", onInput: (e) => { c.notes = e.target.value; } });
-            ta.value = c.notes ?? "";
-            return ta;
-          })(),
-        ]),
-        el("div", { class: "field" }, [
-          el("label", {}, ["Source (optional)"]),
-          el("input", { type: "text", value: c.source ?? "", onInput: (e) => { c.source = e.target.value; } }),
-        ]),
-      ]);
-      card.appendChild(notes);
-
-      root.appendChild(card);
-    });
-  }
-
-  function renderDatabaseTab(state) {
-    const outRoot = q("dbOutputs");
-    const trtRoot = q("dbTreatments");
-    if (outRoot) outRoot.innerHTML = "";
-    if (trtRoot) trtRoot.innerHTML = "";
-
-    if (outRoot) {
-      (state.outputs || []).forEach((o) => {
-        outRoot.appendChild(el("div", { class: "item-card" }, [
-          el("div", { class: "item-head" }, [
-            el("div", { class: "item-title" }, [o.name || "Output"]),
-            el("div", { class: "small muted" }, [o.unit ? `Unit: ${o.unit}` : ""]),
-          ]),
-          el("div", { class: "row-2" }, [
-            el("div", { class: "field" }, [
-              el("label", {}, ["Source"]),
-              el("input", { type: "text", value: o.source ?? "", onInput: (e) => { o.source = e.target.value; } }),
-            ]),
-            el("div", { class: "field" }, [
-              el("label", {}, ["Notes"]),
-              el("input", { type: "text", value: o.notes ?? "", onInput: (e) => { o.notes = e.target.value; } }),
-            ]),
-          ]),
-        ]));
-      });
-    }
-
-    if (trtRoot) {
-      (state.treatments || []).forEach((t) => {
-        trtRoot.appendChild(el("div", { class: "item-card" }, [
-          el("div", { class: "item-head" }, [
-            el("div", { class: "item-title" }, [t.name || "Treatment"]),
-            el("div", { class: "small muted" }, [t.isControl ? "Control" : ""]),
-          ]),
-          el("div", { class: "row-2" }, [
-            el("div", { class: "field" }, [
-              el("label", {}, ["Source"]),
-              el("input", { type: "text", value: t.source ?? "", onInput: (e) => { t.source = e.target.value; } }),
-            ]),
-            el("div", { class: "field" }, [
-              el("label", {}, ["Notes"]),
-              el("input", { type: "text", value: t.notes ?? "", onInput: (e) => { t.notes = e.target.value; } }),
-            ]),
-          ]),
-        ]));
-      });
-    }
-  }
-
-  /********************************************************************
-   * CRUD helpers
-   ********************************************************************/
-  function addOutput() {
-    STATE.outputs.push({ id: uid("out"), name: "New output", unit: "", valuePerUnit: 0, notes: "", source: "" });
-    renderOutputs(STATE);
-    renderTreatments(STATE);
-    renderDatabaseTab(STATE);
-    scheduleRecalc("Output added");
-  }
-
-  function removeOutput(id) {
-    const used = (STATE.treatments || []).some((t) => (t.outputs || []).some((r) => r.outputId === id));
-    if (used) {
-      toast("This output is used by one or more treatment output rows. Remove those rows first.", "warn", 5000);
-      return;
-    }
-    STATE.outputs = (STATE.outputs || []).filter((o) => o.id !== id);
-    renderOutputs(STATE);
-    renderTreatments(STATE);
-    renderDatabaseTab(STATE);
-    scheduleRecalc("Output removed");
-  }
-
-  function addTreatment() {
-    const startYear = Math.trunc(safeNum(STATE.settings.startYear, 2026));
-    const endYear = startYear + Math.max(1, Math.trunc(safeNum(STATE.settings.years, 5))) - 1;
-    const defaultOutputId = STATE.outputs?.[0]?.id ?? null;
-
-    const t = {
-      id: uid("trt"),
-      name: "New treatment",
-      isControl: false,
-      maxAreaHa: 0,
-      labourCostPerHa: 0,
-      inputCostPerHa: 0,
-      notes: "",
-      source: "",
-      outputs: defaultOutputId
-        ? [{ id: uid("to"), outputId: defaultOutputId, qtyPerHa: 0, yearFrom: startYear, yearTo: endYear, notes: "" }]
-        : [],
-    };
-    STATE.treatments.push(t);
-    ensureSingleControl(STATE);
-    renderTreatments(STATE);
-    renderDatabaseTab(STATE);
-    scheduleRecalc("Treatment added");
-  }
-
-  function removeTreatment(id) {
-    const t = (STATE.treatments || []).find((x) => x.id === id);
-    const wasControl = Boolean(t?.isControl);
-    STATE.treatments = (STATE.treatments || []).filter((x) => x.id !== id);
-    if (wasControl) ensureSingleControl(STATE);
-    renderTreatments(STATE);
-    renderDatabaseTab(STATE);
-    scheduleRecalc("Treatment removed");
-  }
-
-  function addTreatmentOutputRow(treatmentId) {
-    const t = (STATE.treatments || []).find((x) => x.id === treatmentId);
-    if (!t) return;
-    if (!STATE.outputs || STATE.outputs.length === 0) {
-      toast("Add at least one output first (Outputs tab) so treatment output rows can reference it.", "warn", 4500);
-      return;
-    }
-    const startYear = Math.trunc(safeNum(STATE.settings.startYear, 2026));
-    const endYear = startYear + Math.max(1, Math.trunc(safeNum(STATE.settings.years, 5))) - 1;
-
-    t.outputs = t.outputs || [];
-    t.outputs.push({
-      id: uid("to"),
-      outputId: STATE.outputs[0].id,
-      qtyPerHa: 0,
-      yearFrom: startYear,
-      yearTo: endYear,
-      notes: "",
-    });
-    renderTreatments(STATE);
-    scheduleRecalc("Treatment output row added");
-  }
-
-  function removeTreatmentOutputRow(treatmentId, rowId) {
-    const t = (STATE.treatments || []).find((x) => x.id === treatmentId);
-    if (!t) return;
-    t.outputs = (t.outputs || []).filter((r) => r.id !== rowId);
-    renderTreatments(STATE);
-    scheduleRecalc("Treatment output row removed");
-  }
-
-  function addBenefit() {
-    const startYear = Math.trunc(safeNum(STATE.settings.startYear, 2026));
-    const endYear = startYear + Math.max(1, Math.trunc(safeNum(STATE.settings.years, 5))) - 1;
-    STATE.benefits.push({ id: uid("ben"), name: "New benefit", annualValue: 0, yearFrom: startYear, yearTo: endYear, notes: "", source: "" });
-    renderBenefits(STATE);
-    scheduleRecalc("Benefit added");
-  }
-
-  function removeBenefit(id) {
-    STATE.benefits = (STATE.benefits || []).filter((b) => b.id !== id);
-    renderBenefits(STATE);
-    scheduleRecalc("Benefit removed");
-  }
-
-  function addCost() {
-    const startYear = Math.trunc(safeNum(STATE.settings.startYear, 2026));
-    const endYear = startYear + Math.max(1, Math.trunc(safeNum(STATE.settings.years, 5))) - 1;
-    STATE.costs.push({ id: uid("cst"), name: "New cost", annualValue: 0, yearFrom: startYear, yearTo: endYear, notes: "", source: "" });
-    renderCosts(STATE);
-    scheduleRecalc("Cost added");
-  }
-
-  function removeCost(id) {
-    STATE.costs = (STATE.costs || []).filter((c) => c.id !== id);
-    renderCosts(STATE);
-    scheduleRecalc("Cost removed");
-  }
-
-  /********************************************************************
-   * Tab navigation
-   ********************************************************************/
-  function setActiveTab(tab) {
-    const buttons = Array.from(document.querySelectorAll(".tab-link"));
-    const panels = Array.from(document.querySelectorAll(".tab-panel"));
-
-    buttons.forEach((b) => {
-      const is = b.getAttribute("data-tab") === tab;
-      b.classList.toggle("active", is);
-      b.setAttribute("aria-selected", is ? "true" : "false");
-      b.tabIndex = is ? 0 : -1;
-    });
-
-    panels.forEach((p) => {
-      const is = p.getAttribute("data-tab-panel") === tab;
-      p.classList.toggle("active", is);
-      p.classList.toggle("show", is);
-      p.setAttribute("aria-hidden", is ? "false" : "true");
-    });
-
-    STATE.ui.activeTab = tab;
-    // Snapshot-friendly: if results tab, ensure matrix renders immediately
-    if (tab === "results") {
-      recalcAndRender();
-    }
-  }
-
-  function wireTabs() {
-    document.querySelectorAll(".tab-link").forEach((btn) => {
-      btn.addEventListener("click", () => setActiveTab(btn.getAttribute("data-tab")));
-    });
-
-    document.querySelectorAll("[data-tab-jump]").forEach((btn) => {
-      btn.addEventListener("click", () => setActiveTab(btn.getAttribute("data-tab-jump")));
-    });
-  }
-
-  /********************************************************************
-   * Project metadata and settings binding
-   ********************************************************************/
-  function bindProjectFields() {
-    const p = STATE.project;
-
-    const map = [
-      ["projectName", "projectName"],
-      ["projectLead", "projectLead"],
-      ["analystNames", "analystNames"],
-      ["projectTeam", "projectTeam"],
-      ["organisation", "organisation"],
-      ["lastUpdated", "lastUpdated"],
-      ["contactEmail", "contactEmail"],
-      ["contactPhone", "contactPhone"],
-      ["projectSummary", "projectSummary"],
-      ["projectGoal", "projectGoal"],
-      ["withProject", "withProject"],
-      ["withoutProject", "withoutProject"],
-      ["projectObjectives", "projectObjectives"],
-      ["projectActivities", "projectActivities"],
-      ["stakeholderGroups", "stakeholderGroups"],
-    ];
-
-    map.forEach(([id, key]) => setInputValue(id, p[key]));
-
-    map.forEach(([id, key]) => {
-      const node = q(id);
-      if (!node) return;
-      node.addEventListener("input", (e) => {
-        p[key] = e.target.value;
-      });
-    });
-  }
-
-  function bindSettingsFields() {
-    const s = STATE.settings;
-
-    const bindNum = (id, key, opts = {}) => {
-      setInputValue(id, s[key]);
-      const node = q(id);
-      if (!node) return;
-      node.addEventListener("input", (e) => {
-        s[key] = safeNum(e.target.value, s[key]);
-        if (opts.recalc) scheduleRecalc();
-        if (opts.rerender) rerenderAll();
-      });
-    };
-
-    const bindSel = (id, key, opts = {}) => {
-      setInputValue(id, s[key]);
-      const node = q(id);
-      if (!node) return;
-      node.addEventListener("change", (e) => {
-        const v = e.target.value;
-        s[key] = v;
-        if (opts.recalc) scheduleRecalc();
-        if (opts.rerender) rerenderAll();
-      });
-    };
-
-    bindNum("startYear", "startYear", { recalc: true, rerender: true });
-    bindNum("projectStartYear", "projectStartYear", { recalc: true });
-    bindNum("years", "years", { recalc: true, rerender: true });
-    bindSel("systemType", "systemType");
-
-    bindNum("discBase", "discBase", { recalc: true });
-    bindNum("discLow", "discLow");
-    bindNum("discHigh", "discHigh");
-    const oa = q("outputAssumptions");
-    if (oa) {
-      oa.value = s.outputAssumptions ?? "";
-      oa.addEventListener("input", (e) => { s.outputAssumptions = e.target.value; });
-    }
-
-    bindNum("mirrFinance", "mirrFinance");
-    bindNum("mirrReinvest", "mirrReinvest");
-
-    bindNum("adoptLow", "adoptLow", { recalc: true, rerender: true });
-    bindNum("adoptBase", "adoptBase", { recalc: true, rerender: true });
-    bindNum("adoptHigh", "adoptHigh", { recalc: true, rerender: true });
-
-    const alloc = q("allocateProjectItems");
-    if (alloc) {
-      alloc.value = String(Boolean(s.allocateProjectItems));
-      alloc.addEventListener("change", (e) => {
-        s.allocateProjectItems = e.target.value === "true";
-        scheduleRecalc();
-      });
-    }
-
-    bindNum("riskLow", "riskLow", { recalc: true });
-    bindNum("riskBase", "riskBase", { recalc: true });
-    bindNum("riskHigh", "riskHigh", { recalc: true });
-
-    bindNum("rTech", "rTech");
-    bindNum("rNonCoop", "rNonCoop");
-    bindNum("rSocio", "rSocio");
-    bindNum("rFin", "rFin");
-    bindNum("rMan", "rMan");
-
-    // Simulation fields
-    bindNum("simN", "simN");
-    bindNum("targetBCR", "targetBCR");
-    bindNum("randSeed", "randSeed");
-    bindNum("simVarPct", "simVarPct");
-
-    const setBoolSel = (id, key) => {
-      const node = q(id);
-      if (!node) return;
-      node.value = String(Boolean(s[key]));
-      node.addEventListener("change", (e) => { s[key] = e.target.value === "true"; });
-    };
-    setBoolSel("simVaryOutputs", "simVaryOutputs");
-    setBoolSel("simVaryTreatCosts", "simVaryTreatCosts");
-    setBoolSel("simVaryInputCosts", "simVaryInputCosts");
-
-    const bcrLabel = q("simBcrTargetLabel");
-    const bcrIn = q("targetBCR");
-    if (bcrLabel && bcrIn) {
-      bcrLabel.textContent = safeStr(bcrIn.value || s.targetBCR || 2);
-      bcrIn.addEventListener("input", () => { bcrLabel.textContent = bcrIn.value; });
-    }
-
-    const combBtn = q("calcCombinedRisk");
-    if (combBtn) {
-      combBtn.addEventListener("click", () => {
-        // Combined risk using multiplicative complement: 1 - Π(1-ri)
-        const parts = [
-          clamp(safeNum(s.rTech, 0), 0, 1),
-          clamp(safeNum(s.rNonCoop, 0), 0, 1),
-          clamp(safeNum(s.rSocio, 0), 0, 1),
-          clamp(safeNum(s.rFin, 0), 0, 1),
-          clamp(safeNum(s.rMan, 0), 0, 1),
-        ];
-        let prod = 1;
-        parts.forEach((ri) => { prod *= (1 - ri); });
-        const combined = 1 - prod;
-        s.riskBase = combined;
-        setInputValue("riskBase", combined);
-        const out = q("combinedRiskOut")?.querySelector(".value");
-        if (out) out.textContent = fmtPercent1.format(combined);
-        toast("Combined base risk calculated and applied to Overall risk base.", "info", 4200);
-        scheduleRecalc();
-      });
-    }
-  }
-
-  function bindResultsControls() {
-    const rankMetric = q("rankMetric");
-    if (rankMetric) {
-      rankMetric.value = STATE.ui.rankMetric || "bcr";
-      rankMetric.addEventListener("change", (e) => {
-        STATE.ui.rankMetric = e.target.value;
-        scheduleRecalc();
-      });
-    }
-
-    const viewMode = q("resultsViewMode");
-    if (viewMode) {
-      viewMode.value = STATE.ui.resultsViewMode || "absolute";
-      viewMode.addEventListener("change", (e) => {
-        STATE.ui.resultsViewMode = e.target.value;
-        scheduleRecalc();
-      });
-    }
-
-    const cols = q("columnsPerPage");
-    if (cols) {
-      cols.value = String(STATE.ui.columnsPerPage || 6);
-      cols.addEventListener("change", (e) => {
-        STATE.ui.columnsPerPage = safeNum(e.target.value, 6);
-        // keep matrixStart bounded
-        STATE.ui.matrixStart = 0;
-        scheduleRecalc();
-      });
-    }
-
-    const showD = q("showDeltas");
-    if (showD) {
-      showD.value = String(Boolean(STATE.ui.showDeltas));
-      showD.addEventListener("change", (e) => {
-        STATE.ui.showDeltas = e.target.value === "true";
-        scheduleRecalc();
-      });
-    }
-
-    const prev = q("matrixPrev");
-    const next = q("matrixNext");
-    if (prev) prev.addEventListener("click", () => {
-      const step = Math.max(1, Math.trunc(safeNum(STATE.ui.columnsPerPage, 6)));
-      STATE.ui.matrixStart = Math.max(0, Math.trunc(safeNum(STATE.ui.matrixStart, 0)) - step);
-      recalcAndRender();
-    });
-    if (next) next.addEventListener("click", () => {
-      const step = Math.max(1, Math.trunc(safeNum(STATE.ui.columnsPerPage, 6)));
-      STATE.ui.matrixStart = Math.max(0, Math.trunc(safeNum(STATE.ui.matrixStart, 0)) + step);
-      recalcAndRender();
-    });
-
-    const recalcBtn = q("recalc");
-    if (recalcBtn) recalcBtn.addEventListener("click", () => recalcAndRender(true));
-
-    const exportBtn = q("exportResultsXlsx");
-    const exportBtnFoot = q("exportResultsXlsxFoot");
-    if (exportBtn) exportBtn.addEventListener("click", () => exportResultsExcel());
-    if (exportBtnFoot) exportBtnFoot.addEventListener("click", () => exportResultsExcel());
-
-    const copyBtn = q("copyResultsTable");
-    if (copyBtn) copyBtn.addEventListener("click", () => copyResultsForWord());
-
-    const pdfBtn = q("exportPdf");
-    const pdfBtnFoot = q("exportPdfFoot");
-    const doPrint = () => {
-      toast("Use your browser print dialog to save as PDF.", "info", 3500);
-      window.print();
-    };
-    if (pdfBtn) pdfBtn.addEventListener("click", doPrint);
-    if (pdfBtnFoot) pdfBtnFoot.addEventListener("click", doPrint);
-  }
-
-  /********************************************************************
-   * Recalc scheduling
-   ********************************************************************/
-  let recalcTimer = null;
-
-  function scheduleRecalc(msg = null) {
-    if (msg) toast(msg, "info", 1800);
-    if (recalcTimer) clearTimeout(recalcTimer);
-    recalcTimer = setTimeout(() => {
-      recalcAndRender(false);
-    }, 220);
-  }
-
-  function recalcAndRender(forceToast = false) {
-    ensureSingleControl(STATE);
-
-    const results = computeAllResults(STATE);
-    STATE.cache.lastResults = results;
-    STATE.cache.lastResultsMeta = {
-      viewMode: STATE.ui.resultsViewMode,
-      rankMetric: STATE.ui.rankMetric,
-      columnsPerPage: STATE.ui.columnsPerPage,
-      showDeltas: STATE.ui.showDeltas,
-      matrixStart: STATE.ui.matrixStart,
-    };
-
-    updateSnapshotCards(results);
-    renderResultsMatrix(STATE, results);
-    updateResultsAssumptions(STATE, results);
-
-    if (forceToast) toast("Results updated.", "info", 2200);
-  }
-
-  /********************************************************************
-   * Excel export: templates + results
-   ********************************************************************/
-  function sheetFromObjects(rows, headerOrder) {
-    const cleanRows = rows.map((r) => {
-      const o = {};
-      headerOrder.forEach((h) => (o[h] = r[h] ?? ""));
-      return o;
-    });
-    return XLSX.utils.json_to_sheet(cleanRows, { header: headerOrder });
-  }
-
-  function buildWorkbookFromState(state, { includeResults = true, blank = false } = {}) {
-    const wb = XLSX.utils.book_new();
-    const stamp = new Date().toISOString();
-
-    // README
-    const readmeLines = [
-      `${TOOL_NAME} — Excel workflow`,
-      `Generated: ${stamp}`,
-      ``,
-      `How to use:`,
-      `1) Keep sheet names and header columns unchanged.`,
-      `2) Edit rows in Outputs, Treatments, TreatmentOutputs, Benefits, Costs.`,
-      `3) You may leave IDs blank. The tool will auto-generate IDs on import.`,
-      `4) Ensure exactly one treatment has is_control = TRUE.`,
-      `5) Year ranges must sit within the analysis horizon (start_year to start_year + years - 1).`,
-      ``,
-      `This file is designed to be uploaded back into the tool.`,
-    ];
-    const wsReadme = XLSX.utils.aoa_to_sheet(readmeLines.map((x) => [x]));
-    XLSX.utils.book_append_sheet(wb, wsReadme, "README");
-
-    // Project
-    const p = state.project || {};
-    const projectRows = [{
-      tool_name: TOOL_NAME,
-      organisation: p.organisation ?? ORG_NAME,
-      project_name: blank ? "" : (p.projectName ?? ""),
-      project_lead: blank ? "" : (p.projectLead ?? ""),
-      analyst_team: blank ? "" : (p.analystNames ?? ""),
-      partners_or_team: blank ? "" : (p.projectTeam ?? ""),
-      last_updated: blank ? "" : (p.lastUpdated ?? ""),
-      contact_email: blank ? "" : (p.contactEmail ?? ""),
-      contact_phone: blank ? "" : (p.contactPhone ?? ""),
-      short_summary: blank ? "" : (p.projectSummary ?? ""),
-      project_goal: blank ? "" : (p.projectGoal ?? ""),
-      with_project: blank ? "" : (p.withProject ?? ""),
-      without_project: blank ? "" : (p.withoutProject ?? ""),
-      objectives: blank ? "" : (p.projectObjectives ?? ""),
-      activities: blank ? "" : (p.projectActivities ?? ""),
-      stakeholder_groups: blank ? "" : (p.stakeholderGroups ?? ""),
-    }];
-    const projectHdr = Object.keys(projectRows[0]);
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(projectRows, projectHdr), "Project");
-
-    // Settings
-    const s = state.settings || {};
-    const settingsRows = [{
-      tool_name: TOOL_NAME,
-      start_year: blank ? "" : safeNum(s.startYear, 2026),
-      project_start_year: blank ? "" : safeNum(s.projectStartYear, safeNum(s.startYear, 2026)),
-      years: blank ? "" : safeNum(s.years, 5),
-      system_type: blank ? "" : (s.systemType ?? "single"),
-      discount_base_percent: blank ? "" : safeNum(s.discBase, 7),
-      discount_low_percent: blank ? "" : safeNum(s.discLow, 3),
-      discount_high_percent: blank ? "" : safeNum(s.discHigh, 10),
-      adoption_low: blank ? "" : safeNum(s.adoptLow, 0.6),
-      adoption_base: blank ? "" : safeNum(s.adoptBase, 0.85),
-      adoption_high: blank ? "" : safeNum(s.adoptHigh, 1),
-      allocate_project_items_by_area: blank ? "" : (Boolean(s.allocateProjectItems) ? "TRUE" : "FALSE"),
-      risk_low: blank ? "" : safeNum(s.riskLow, 0.05),
-      risk_base: blank ? "" : safeNum(s.riskBase, 0.12),
-      risk_high: blank ? "" : safeNum(s.riskHigh, 0.25),
-      notes_on_assumptions: blank ? "" : (s.outputAssumptions ?? ""),
-    }];
-    const settingsHdr = Object.keys(settingsRows[0]);
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(settingsRows, settingsHdr), "Settings");
-
-    // Outputs
-    const outputsHdr = ["output_id", "output_name", "unit", "value_per_unit_aud", "notes", "source"];
-    const outputsRows = (blank ? [] : (state.outputs || [])).map((o) => ({
-      output_id: o.id ?? "",
-      output_name: o.name ?? "",
-      unit: o.unit ?? "",
-      value_per_unit_aud: safeNum(o.valuePerUnit, 0),
-      notes: o.notes ?? "",
-      source: o.source ?? "",
-    }));
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(outputsRows.length ? outputsRows : [outputsHdr.reduce((a, h) => ((a[h] = ""), a), {})], outputsHdr), "Outputs");
-
-    // Treatments
-    const trtHdr = ["treatment_id", "treatment_name", "is_control", "max_area_ha", "labour_cost_per_ha_aud", "input_cost_per_ha_aud", "notes", "source"];
-    const trtRows = (blank ? [] : (state.treatments || [])).map((t) => ({
-      treatment_id: t.id ?? "",
-      treatment_name: t.name ?? "",
-      is_control: t.isControl ? "TRUE" : "FALSE",
-      max_area_ha: safeNum(t.maxAreaHa, 0),
-      labour_cost_per_ha_aud: safeNum(t.labourCostPerHa, 0),
-      input_cost_per_ha_aud: safeNum(t.inputCostPerHa, 0),
-      notes: t.notes ?? "",
-      source: t.source ?? "",
-    }));
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(trtRows.length ? trtRows : [trtHdr.reduce((a, h) => ((a[h] = ""), a), {})], trtHdr), "Treatments");
-
-    // TreatmentOutputs
-    const toHdr = ["row_id", "treatment_id", "output_id", "qty_per_ha", "year_from", "year_to", "notes"];
-    const toRows = (blank ? [] : (state.treatments || []).flatMap((t) => (t.outputs || []).map((r) => ({
-      row_id: r.id ?? "",
-      treatment_id: t.id ?? "",
-      output_id: r.outputId ?? "",
-      qty_per_ha: safeNum(r.qtyPerHa, 0),
-      year_from: safeNum(r.yearFrom, s.startYear),
-      year_to: safeNum(r.yearTo, s.startYear),
-      notes: r.notes ?? "",
-    }))));
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(toRows.length ? toRows : [toHdr.reduce((a, h) => ((a[h] = ""), a), {})], toHdr), "TreatmentOutputs");
-
-    // Benefits
-    const benHdr = ["benefit_id", "benefit_name", "annual_value_aud", "year_from", "year_to", "notes", "source"];
-    const benRows = (blank ? [] : (state.benefits || [])).map((b) => ({
-      benefit_id: b.id ?? "",
-      benefit_name: b.name ?? "",
-      annual_value_aud: safeNum(b.annualValue, 0),
-      year_from: safeNum(b.yearFrom, s.startYear),
-      year_to: safeNum(b.yearTo, s.startYear),
-      notes: b.notes ?? "",
-      source: b.source ?? "",
-    }));
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(benRows.length ? benRows : [benHdr.reduce((a, h) => ((a[h] = ""), a), {})], benHdr), "Benefits");
-
-    // Costs
-    const costHdr = ["cost_id", "cost_name", "annual_value_aud", "year_from", "year_to", "notes", "source"];
-    const costRows = (blank ? [] : (state.costs || [])).map((c) => ({
-      cost_id: c.id ?? "",
-      cost_name: c.name ?? "",
-      annual_value_aud: safeNum(c.annualValue, 0),
-      year_from: safeNum(c.yearFrom, s.startYear),
-      year_to: safeNum(c.yearTo, s.startYear),
-      notes: c.notes ?? "",
-      source: c.source ?? "",
-    }));
-    XLSX.utils.book_append_sheet(wb, sheetFromObjects(costRows.length ? costRows : [costHdr.reduce((a, h) => ((a[h] = ""), a), {})], costHdr), "Costs");
-
-    if (includeResults) {
-      const results = computeAllResults(state);
-      const ordered = results.indicators
-        .slice()
-        .sort((a, b) => {
-          if (a.isControl && !b.isControl) return -1;
-          if (!a.isControl && b.isControl) return 1;
-          return (a.rank ?? 9999) - (b.rank ?? 9999);
-        });
-
-      const cols = ordered.map((x) => x.isControl ? `${x.treatmentName} (Control)` : x.treatmentName);
-
-      const absAoA = [];
-      absAoA.push(["Indicator", ...cols]);
-      MATRIX_ROWS.forEach((r) => {
-        const row = [r.label];
-        ordered.forEach((c) => {
-          const v = c[r.key];
-          if (r.key === "npv" || r.key === "pvBenefits" || r.key === "pvCosts") row.push(Number(v));
-          else if (r.key === "rank") row.push(c.rank ?? "");
-          else row.push(v === Infinity ? "INF" : Number(v));
-        });
-        absAoA.push(row);
-      });
-
-      const wsAbs = XLSX.utils.aoa_to_sheet(absAoA);
-      XLSX.utils.book_append_sheet(wb, wsAbs, "Results_Absolute");
-
-      const ctrl = results.control;
-      const relAoA = [];
-      relAoA.push(["Indicator (difference vs control)", ...cols]);
-      MATRIX_ROWS.forEach((r) => {
-        const row = [r.label];
-        ordered.forEach((c) => {
-          if (!ctrl) {
-            row.push("");
-            return;
-          }
-          if (c.isControl) {
-            row.push(0);
-            return;
-          }
-          const base = safeNum(ctrl[r.key], 0);
-          const val = safeNum(c[r.key], 0);
-          row.push(r.key === "rank" ? (safeNum(c.rank, 0) - safeNum(ctrl.rank, 0)) : (val - base));
-        });
-        relAoA.push(row);
-      });
-      const wsRel = XLSX.utils.aoa_to_sheet(relAoA);
-      XLSX.utils.book_append_sheet(wb, wsRel, "Results_Relative");
-    }
-
-    return wb;
-  }
-
-  function writeWorkbook(wb, filename) {
-    const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    downloadBlob(filename, new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-  }
-
-  function exportResultsExcel() {
-    try {
-      const wb = buildWorkbookFromState(STATE, { includeResults: true, blank: false });
-      const p = STATE.project?.projectName ? STATE.project.projectName.replace(/[^\w\-]+/g, "_").slice(0, 50) : "Project";
-      const filename = `${TOOL_NAME.replace(/\s+/g, "_")}_${p}_Results_${todayISO()}.xlsx`;
-      writeWorkbook(wb, filename);
-      toast("Results exported to Excel.", "info", 2500);
-    } catch (e) {
-      console.error(e);
-      toast("Could not export Excel. Please try again.", "error", 4500);
-    }
-  }
-
-  function bindExcelWorkflow() {
-    const btnBlank = q("downloadTemplate");
-    const btnScenario = q("downloadScenarioTemplate");
-    const btnSample = q("downloadSample");
-    const btnParse = q("parseExcel");
-    const btnImport = q("importExcel");
-    const input = q("excelFileInput");
-    const status = q("excelParseStatus");
-
-    if (btnBlank) btnBlank.addEventListener("click", () => {
-      try {
-        const wb = buildWorkbookFromState(STATE, { includeResults: false, blank: true });
-        const filename = `${TOOL_NAME.replace(/\s+/g, "_")}_Blank_Template_${todayISO()}.xlsx`;
-        writeWorkbook(wb, filename);
-        toast("Blank Excel template downloaded.", "info", 2500);
-      } catch (e) {
-        console.error(e);
-        toast("Could not build blank template.", "error", 4500);
-      }
-    });
-
-    if (btnScenario) btnScenario.addEventListener("click", () => {
-      try {
-        const wb = buildWorkbookFromState(STATE, { includeResults: true, blank: false });
-        const filename = `${TOOL_NAME.replace(/\s+/g, "_")}_Scenario_Template_${todayISO()}.xlsx`;
-        writeWorkbook(wb, filename);
-        toast("Scenario template downloaded.", "info", 2500);
-      } catch (e) {
-        console.error(e);
-        toast("Could not build scenario template.", "error", 4500);
-      }
-    });
-
-    if (btnSample) btnSample.addEventListener("click", () => {
-      try {
-        const sample = buildSampleState();
-        const wb = buildWorkbookFromState(sample, { includeResults: true, blank: false });
-        const filename = `${TOOL_NAME.replace(/\s+/g, "_")}_Sample_FabaBean_${todayISO()}.xlsx`;
-        writeWorkbook(wb, filename);
-        toast("Sample Excel file downloaded.", "info", 2500);
-      } catch (e) {
-        console.error(e);
-        toast("Could not build sample file.", "error", 4500);
-      }
-    });
-
-    if (btnParse && input) {
-      btnParse.addEventListener("click", () => input.click());
-    }
-
-    if (input) {
-      input.addEventListener("change", async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        if (status) status.textContent = `Reading ${file.name} ...`;
-        try {
-          const arr = await file.arrayBuffer();
-          const wb = XLSX.read(arr, { type: "array" });
-          const parsed = parseWorkbookToState(wb);
-
-          STATE.excel.parsed = parsed.state;
-          STATE.excel.parsedSummary = parsed.summary;
-
-          if (status) status.textContent = parsed.summaryText;
-          toast("Excel file parsed. Review the summary, then apply.", "info", 3500);
-
-          if (btnImport) btnImport.classList.remove("ghost");
-        } catch (err) {
-          console.error(err);
-          STATE.excel.parsed = null;
-          STATE.excel.parsedSummary = null;
-          if (status) status.textContent = `Could not parse Excel file. ${safeStr(err?.message, "")}`.trim();
-          toast("Excel parsing failed. Check sheet names and headers.", "error", 5000);
-        } finally {
-          // allow re-selecting same file
-          input.value = "";
-        }
-      });
-    }
-
-    if (btnImport) {
-      btnImport.addEventListener("click", () => {
-        if (!STATE.excel.parsed) {
-          toast("No parsed Excel data to apply yet. Select and parse a file first.", "warn", 4500);
-          return;
-        }
-        try {
-          // Apply parsed (keeping UI selections)
-          const keepUi = deepClone(STATE.ui);
-          const keepCache = deepClone(STATE.cache);
-          const applied = deepClone(STATE.excel.parsed);
-
-          applied.ui = { ...keepUi, ...applied.ui };
-          applied.cache = keepCache;
-          applied.excel = { parsed: null, parsedSummary: null };
-
-          STATE = applied;
-
-          // Rebind fields and rerender
-          bindProjectFields();
-          bindSettingsFields();
-
-          rerenderAll();
-          recalcAndRender(true);
-
-          const st = q("excelParseStatus");
-          if (st) st.textContent = "Applied. Your tool has been updated from Excel.";
-          toast("Excel inputs applied successfully.", "info", 3500);
-        } catch (e) {
-          console.error(e);
-          toast("Could not apply Excel data. Please check the file and try again.", "error", 5500);
-        }
-      });
-    }
-  }
-
-  function getSheetJson(wb, name) {
-    const ws = wb.Sheets[name];
-    if (!ws) return null;
-    return XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
-  }
-
-  function validateWorkbook(wb) {
-    const missing = REQUIRED_SHEETS.filter((s) => !wb.Sheets[s]);
-    return { ok: missing.length === 0, missing };
-  }
-
-  function parseWorkbookToState(wb) {
-    const v = validateWorkbook(wb);
-    if (!v.ok) {
-      throw new Error(`Missing required sheets: ${v.missing.join(", ")}`);
-    }
-
-    const projectRows = getSheetJson(wb, "Project");
-    const settingsRows = getSheetJson(wb, "Settings");
-    const outputsRows = getSheetJson(wb, "Outputs");
-    const trtRows = getSheetJson(wb, "Treatments");
-    const toRows = getSheetJson(wb, "TreatmentOutputs");
-    const benRows = getSheetJson(wb, "Benefits");
-    const costRows = getSheetJson(wb, "Costs");
-
-    const state = buildSampleState(); // base scaffold
-    // Keep UI controls and other defaults; overwrite content
-    state.outputs = [];
-    state.treatments = [];
-    state.benefits = [];
-    state.costs = [];
-
-    // Project
-    const p0 = projectRows?.[0] || {};
-    state.project.organisation = safeStr(p0.organisation, ORG_NAME) || ORG_NAME;
-    state.project.projectName = safeStr(p0.project_name, "");
-    state.project.projectLead = safeStr(p0.project_lead, "");
-    state.project.analystNames = safeStr(p0.analyst_team, "");
-    state.project.projectTeam = safeStr(p0.partners_or_team, "");
-    state.project.lastUpdated = safeStr(p0.last_updated, todayISO());
-    state.project.contactEmail = safeStr(p0.contact_email, "");
-    state.project.contactPhone = safeStr(p0.contact_phone, "");
-    state.project.projectSummary = safeStr(p0.short_summary, "");
-    state.project.projectGoal = safeStr(p0.project_goal, "");
-    state.project.withProject = safeStr(p0.with_project, "");
-    state.project.withoutProject = safeStr(p0.without_project, "");
-    state.project.projectObjectives = safeStr(p0.objectives, "");
-    state.project.projectActivities = safeStr(p0.activities, "");
-    state.project.stakeholderGroups = safeStr(p0.stakeholder_groups, "");
-
-    // Settings
-    const s0 = settingsRows?.[0] || {};
-    const startYear = safeNum(s0.start_year, 2026);
-    const years = Math.max(1, Math.trunc(safeNum(s0.years, 5)));
-
-    state.settings.startYear = Math.trunc(startYear);
-    state.settings.projectStartYear = Math.trunc(safeNum(s0.project_start_year, startYear));
-    state.settings.years = years;
-    state.settings.systemType = safeStr(s0.system_type, "single") || "single";
-    state.settings.discBase = safeNum(s0.discount_base_percent, 7);
-    state.settings.discLow = safeNum(s0.discount_low_percent, 3);
-    state.settings.discHigh = safeNum(s0.discount_high_percent, 10);
-    state.settings.adoptLow = clamp(safeNum(s0.adoption_low, 0.6), 0, 1);
-    state.settings.adoptBase = clamp(safeNum(s0.adoption_base, 0.85), 0, 1);
-    state.settings.adoptHigh = clamp(safeNum(s0.adoption_high, 1), 0, 1);
-    state.settings.allocateProjectItems = ynToBool(s0.allocate_project_items_by_area, true);
-    state.settings.riskLow = clamp(safeNum(s0.risk_low, 0.05), 0, 1);
-    state.settings.riskBase = clamp(safeNum(s0.risk_base, 0.12), 0, 1);
-    state.settings.riskHigh = clamp(safeNum(s0.risk_high, 0.25), 0, 1);
-    state.settings.outputAssumptions = safeStr(s0.notes_on_assumptions, "");
-
-    // Outputs (allow blank IDs; map by name)
-    const outNameToId = new Map();
-    (outputsRows || []).forEach((r) => {
-      const name = safeStr(r.output_name, "").trim();
-      if (!name) return;
-      const id = safeStr(r.output_id, "").trim() || uid("out");
-      if (outNameToId.has(name.toLowerCase())) return; // keep first
-      const o = {
-        id,
-        name,
-        unit: safeStr(r.unit, ""),
-        valuePerUnit: safeNum(r.value_per_unit_aud, 0),
-        notes: safeStr(r.notes, ""),
-        source: safeStr(r.source, ""),
-      };
-      state.outputs.push(o);
-      outNameToId.set(name.toLowerCase(), id);
-    });
-
-    // Treatments (allow blank IDs; ensure one control)
-    const trtNameToId = new Map();
-    (trtRows || []).forEach((r) => {
-      const name = safeStr(r.treatment_name, "").trim();
-      if (!name) return;
-      const id = safeStr(r.treatment_id, "").trim() || uid("trt");
-      if (trtNameToId.has(name.toLowerCase())) return; // keep first
-      const t = {
-        id,
-        name,
-        isControl: ynToBool(r.is_control, false),
-        maxAreaHa: safeNum(r.max_area_ha, 0),
-        labourCostPerHa: safeNum(r.labour_cost_per_ha_aud, 0),
-        inputCostPerHa: safeNum(r.input_cost_per_ha_aud, 0),
-        notes: safeStr(r.notes, ""),
-        source: safeStr(r.source, ""),
-        outputs: [],
-      };
-      state.treatments.push(t);
-      trtNameToId.set(name.toLowerCase(), id);
-    });
-
-    // If user provided no outputs/treatments, keep at least a control scaffold
-    if (state.outputs.length === 0) {
-      state.outputs.push({ id: uid("out"), name: "Output 1", unit: "", valuePerUnit: 0, notes: "", source: "" });
-    }
-    if (state.treatments.length === 0) {
-      state.treatments.push({
-        id: uid("trt"),
-        name: "Control",
-        isControl: true,
-        maxAreaHa: 0,
-        labourCostPerHa: 0,
-        inputCostPerHa: 0,
-        notes: "",
-        source: "",
-        outputs: [],
-      });
-    }
-
-    // TreatmentOutputs: map by IDs first, else by names if supplied
-    const outIdSet = new Set(state.outputs.map((o) => o.id));
-    const trtIdSet = new Set(state.treatments.map((t) => t.id));
-
-    const tryMapOutputId = (row) => {
-      const oid = safeStr(row.output_id, "").trim();
-      if (oid && outIdSet.has(oid)) return oid;
-      const oname = safeStr(row.output_name, "").trim();
-      if (oname) return outNameToId.get(oname.toLowerCase()) || null;
-      return null;
-    };
-
-    const tryMapTreatmentId = (row) => {
-      const tid = safeStr(row.treatment_id, "").trim();
-      if (tid && trtIdSet.has(tid)) return tid;
-      const tname = safeStr(row.treatment_name, "").trim();
-      if (tname) return trtNameToId.get(tname.toLowerCase()) || null;
-      return null;
-    };
-
-    (toRows || []).forEach((r) => {
-      const tid = tryMapTreatmentId(r);
-      const oid = tryMapOutputId(r);
-      if (!tid || !oid) return;
-
-      const rowId = safeStr(r.row_id, "").trim() || uid("to");
-      const qty = safeNum(r.qty_per_ha, 0);
-      const yf = safeNum(r.year_from, startYear);
-      const yt = safeNum(r.year_to, startYear);
-
-      const t = state.treatments.find((x) => x.id === tid);
-      if (!t) return;
-      t.outputs.push({
-        id: rowId,
-        outputId: oid,
-        qtyPerHa: qty,
-        yearFrom: yf,
-        yearTo: yt,
-        notes: safeStr(r.notes, ""),
-      });
-    });
-
-    // Benefits
-    (benRows || []).forEach((r) => {
-      const name = safeStr(r.benefit_name, "").trim();
-      if (!name) return;
-      state.benefits.push({
-        id: safeStr(r.benefit_id, "").trim() || uid("ben"),
-        name,
-        annualValue: safeNum(r.annual_value_aud, 0),
-        yearFrom: safeNum(r.year_from, startYear),
-        yearTo: safeNum(r.year_to, startYear),
-        notes: safeStr(r.notes, ""),
-        source: safeStr(r.source, ""),
-      });
-    });
-
-    // Costs
-    (costRows || []).forEach((r) => {
-      const name = safeStr(r.cost_name, "").trim();
-      if (!name) return;
-      state.costs.push({
-        id: safeStr(r.cost_id, "").trim() || uid("cst"),
-        name,
-        annualValue: safeNum(r.annual_value_aud, 0),
-        yearFrom: safeNum(r.year_from, startYear),
-        yearTo: safeNum(r.year_to, startYear),
-        notes: safeStr(r.notes, ""),
-        source: safeStr(r.source, ""),
-      });
-    });
-
-    // Enforce control uniqueness
-    ensureSingleControl(state);
-
-    // Validate year ranges (soft warnings)
-    const warnings = [];
-    const minY = state.settings.startYear;
-    const maxY = state.settings.startYear + state.settings.years - 1;
-
-    const inRange = (y) => Number.isFinite(y) && y >= minY && y <= maxY;
-    state.treatments.forEach((t) => {
-      (t.outputs || []).forEach((r) => {
-        if (!inRange(safeNum(r.yearFrom, NaN)) || !inRange(safeNum(r.yearTo, NaN))) {
-          warnings.push(`TreatmentOutputs row has year range outside horizon: ${t.name}`);
-        }
-      });
-    });
-    state.benefits.forEach((b) => {
-      if (!inRange(safeNum(b.yearFrom, NaN)) || !inRange(safeNum(b.yearTo, NaN))) warnings.push(`Benefit outside horizon: ${b.name}`);
-    });
-    state.costs.forEach((c) => {
-      if (!inRange(safeNum(c.yearFrom, NaN)) || !inRange(safeNum(c.yearTo, NaN))) warnings.push(`Cost outside horizon: ${c.name}`);
-    });
-
-    const summary = {
-      outputs: state.outputs.length,
-      treatments: state.treatments.length,
-      treatmentOutputs: state.treatments.reduce((s, t) => s + (t.outputs?.length || 0), 0),
-      benefits: state.benefits.length,
-      costs: state.costs.length,
-      warnings,
-    };
-
-    const summaryText = [
-      `Parsed successfully.`,
-      `Outputs: ${summary.outputs}. Treatments: ${summary.treatments}. Treatment output rows: ${summary.treatmentOutputs}.`,
-      `Benefits: ${summary.benefits}. Costs: ${summary.costs}.`,
-      ...(warnings.length ? [`Warnings: ${warnings.slice(0, 6).join(" | ")}${warnings.length > 6 ? " | ..." : ""}`] : []),
-      `Click "Apply parsed Excel to tool" to update.`,
-    ].join(" ");
-
-    return { state, summary, summaryText };
-  }
-
-  /********************************************************************
-   * Copy results table for Word (HTML + TSV)
-   ********************************************************************/
-  async function copyResultsForWord() {
-    try {
-      const results = STATE.cache.lastResults || computeAllResults(STATE);
-      const ordered = results.indicators
-        .slice()
-        .sort((a, b) => {
-          if (a.isControl && !b.isControl) return -1;
-          if (!a.isControl && b.isControl) return 1;
-          return (a.rank ?? 9999) - (b.rank ?? 9999);
-        });
-
-      const cols = ordered.map((x) => x.isControl ? `${x.treatmentName} (Control)` : x.treatmentName);
-
-      // Build a clean HTML table (Word-friendly)
-      const htmlRows = [];
-      htmlRows.push(`<tr><th>Indicator</th>${cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr>`);
-      MATRIX_ROWS.forEach((r) => {
-        const cells = ordered.map((c) => {
-          const v = c[r.key];
-          if (r.key === "npv" || r.key === "pvBenefits" || r.key === "pvCosts") return fmtCurrency2.format(v);
-          if (r.key === "rank") return String(c.rank ?? "n/a");
-          if (v === Infinity) return "∞";
-          return fmtNumber3.format(v);
-        });
-        htmlRows.push(`<tr><td>${escapeHtml(r.label)}</td>${cells.map((x) => `<td>${escapeHtml(x)}</td>`).join("")}</tr>`);
-      });
-
-      const html = `
-        <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt;">
-          ${htmlRows.join("")}
+    const tableHTML = `
+      <div class="tool2-table-wrap" id="resultsCompareWrap">
+        <table class="tool2-compare" id="resultsCompareTable">
+          <thead>
+            <tr>
+              <th>Economic indicator</th>
+              ${colHeaders}
+            </tr>
+          </thead>
+          <tbody>
+            ${metricRows.join("")}
+          </tbody>
         </table>
-      `.trim();
+      </div>
+    `;
 
-      // TSV fallback
-      const tsvLines = [];
-      tsvLines.push(["Indicator", ...cols].join("\t"));
-      MATRIX_ROWS.forEach((r) => {
-        const cells = ordered.map((c) => {
-          const v = c[r.key];
-          if (r.key === "npv" || r.key === "pvBenefits" || r.key === "pvCosts") return fmtCurrency2.format(v);
-          if (r.key === "rank") return String(c.rank ?? "n/a");
-          if (v === Infinity) return "∞";
-          return fmtNumber3.format(v);
-        });
-        tsvLines.push([r.label, ...cells].join("\t"));
-      });
-      const tsv = tsvLines.join("\n");
+    const actionsHTML = `
+      <div class="tool2-actions no-print">
+        <button id="tool2CopyWord" type="button">Copy table (Word-friendly)</button>
+        <button id="tool2CopyTSV" type="button">Copy table (TSV)</button>
+        <button id="tool2ExportResultsExcel" type="button">Export results (Excel)</button>
+        <button id="tool2PrintResults" type="button">Print / Save as PDF</button>
+        <button id="tool2MakeAIPrompt" type="button">Generate AI interpretation prompt</button>
+      </div>
+    `;
 
-      if (navigator.clipboard && window.ClipboardItem) {
+    const detailHTML = `
+      <div class="tool2-detail">
+        <details>
+          <summary>Why do treatments differ? (optional detail)</summary>
+          <div style="margin-top:.6rem" class="tool2-small">
+            Results depend on yield uplift (and other output deltas), unit values (e.g. $/t), operating costs ($/ha), capital cost (year 0), adoption, risk, horizon, and the discount rate.
+            Underperforming treatments remain visible so you can diagnose drivers and explore realistic changes in costs, yields, or prices.
+          </div>
+        </details>
+      </div>
+    `;
+
+    setHTML(
+      "#resultsMain",
+      `
+        <div class="tool2-badge"><span class="dot"></span><strong>${esc(TOOL_NAME)}</strong></div>
+        ${kpisHTML}
+        ${actionsHTML}
+        ${tableHTML}
+        ${detailHTML}
+        <div id="tool2AIPromptBlock" class="tool2-detail"></div>
+      `
+    );
+
+    bindResultsButtons(comp);
+  }
+
+  // Copy helpers (Word-friendly HTML and TSV)
+  function tableToTSV(table) {
+    const rows = Array.from(table.querySelectorAll("tr"));
+    return rows
+      .map(r =>
+        Array.from(r.querySelectorAll("th,td"))
+          .map(c => (c.innerText || "").replace(/\s+\n/g, " ").replace(/\n+/g, " ").trim())
+          .join("\t")
+      )
+      .join("\n");
+  }
+
+  async function copyToClipboard({ text, html }) {
+    // Prefer rich clipboard if supported
+    try {
+      if (navigator.clipboard && window.ClipboardItem && html) {
         const item = new ClipboardItem({
-          "text/html": new Blob([html], { type: "text/html" }),
-          "text/plain": new Blob([tsv], { type: "text/plain" }),
+          "text/plain": new Blob([text || ""], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" })
         });
         await navigator.clipboard.write([item]);
-      } else {
-        // Fallback: plain text only
-        await navigator.clipboard.writeText(tsv);
+        return true;
       }
+    } catch (_) {}
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text || "");
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
 
-      toast("Results table copied. Paste into Word.", "info", 3000);
-    } catch (e) {
-      console.error(e);
-      toast("Could not copy table. Try exporting Excel instead.", "error", 4500);
+  function bindResultsButtons(comp) {
+    const table = $("#resultsCompareTable");
+    if (!table) return;
+
+    const btnWord = $("#tool2CopyWord");
+    const btnTSV = $("#tool2CopyTSV");
+    const btnXLSX = $("#tool2ExportResultsExcel");
+    const btnPrint = $("#tool2PrintResults");
+    const btnAI = $("#tool2MakeAIPrompt");
+
+    if (btnWord) {
+      btnWord.addEventListener("click", async () => {
+        const tsv = tableToTSV(table);
+        const html = table.outerHTML;
+        const ok = await copyToClipboard({ text: tsv, html });
+        showToast(ok ? "Copied (Word-friendly)." : "Copy failed. Try the TSV option.");
+      });
+    }
+
+    if (btnTSV) {
+      btnTSV.addEventListener("click", async () => {
+        const tsv = tableToTSV(table);
+        const ok = await copyToClipboard({ text: tsv });
+        showToast(ok ? "Copied (TSV)." : "Copy failed.");
+      });
+    }
+
+    if (btnXLSX) {
+      btnXLSX.addEventListener("click", () => exportResultsExcel(comp));
+    }
+
+    if (btnPrint) {
+      btnPrint.addEventListener("click", () => {
+        // Print results only by scrolling to the table; CSS hides irrelevant items if your HTML uses .no-print
+        window.print();
+      });
+    }
+
+    if (btnAI) {
+      btnAI.addEventListener("click", () => {
+        renderAIPrompt(comp);
+        showToast("AI interpretation prompt generated.");
+      });
     }
   }
 
-  /********************************************************************
-   * AI prompt builder + exports
-   ********************************************************************/
-  function buildAiPromptFromCurrentResults() {
-    const results = STATE.cache.lastResults || computeAllResults(STATE);
-    const control = results.control;
+  // -----------------------------
+  // AI PROMPT (flexible, learning + improvement aid)
+  // -----------------------------
+  function buildAIPrompt(comp) {
+    const { meta, rows } = comp;
+    const control = rows.find(r => r.isControl) || rows[0];
 
-    const audience = q("aiAudience")?.value || "farmer";
-    const length = q("aiLength")?.value || "medium";
-    const focus = q("aiFocus")?.value || "economic";
+    // Identify underperformers for guidance (not rules)
+    const under = rows
+      .filter(r => !r.isControl)
+      .filter(r => (isFinite(r.inc.bcr) && r.inc.bcr < 1) || (isFinite(r.inc.npv) && r.inc.npv < 0));
 
-    const s = STATE.settings;
-    const p = STATE.project;
+    // Compact treatment summary table for prompt (TSV)
+    const header = ["Treatment", "Is control", "Rank (ΔNPV)", "ΔNPV", "ΔPV Benefits", "ΔPV Costs", "ΔBCR", "ΔROI"];
+    const lines = [header.join("\t")];
+    rows.forEach(r => {
+      lines.push(
+        [
+          r.name,
+          r.isControl ? "Yes" : "No",
+          r.isControl ? "1" : String(r.rank),
+          money(r.isControl ? 0 : r.inc.npv),
+          money(r.isControl ? 0 : r.inc.pvBenefits),
+          money(r.isControl ? 0 : r.inc.pvCosts),
+          isFinite(r.isControl ? 0 : r.inc.bcr) ? fmt(r.inc.bcr) : "n/a",
+          isFinite(r.isControl ? 0 : r.inc.roi) ? fmt(r.inc.roi) + "%" : "n/a"
+        ].join("\t")
+      );
+    });
 
-    const ordered = results.indicators
-      .slice()
-      .sort((a, b) => {
-        if (a.isControl && !b.isControl) return -1;
-        if (!a.isControl && b.isControl) return 1;
-        return (a.rank ?? 9999) - (b.rank ?? 9999);
-      });
+    const improv = under.length
+      ? under
+          .slice(0, 6)
+          .map(r => `- ${r.name}: consider practical levers such as reducing input costs (materials/labour/services), targeting application rates, improving timeliness/operations, improving yield response through agronomic practice, or seeking better output prices/quality. Explain which lever is most plausible given the results table.`)
+          .join("\n")
+      : "- If any treatment has low ΔBCR or negative ΔNPV, propose realistic improvement levers (cost, yield, price, agronomy) without imposing thresholds or telling the user what to do.";
 
-    const top = ordered.filter((x) => !x.isControl).slice(0, 3);
-    const bottom = ordered.filter((x) => !x.isControl).slice(-3);
+    const prompt = `
+You are helping interpret a farming cost–benefit analysis produced by ${TOOL_NAME}. Your job is to explain results in plain English and help the user learn. Do not dictate a decision and do not impose thresholds. Focus on transparency: why a treatment performs well or poorly and what drives that result.
 
-    const rowsForPrompt = ordered.map((t) => ({
-      treatment: t.isControl ? `${t.treatmentName} (Control)` : t.treatmentName,
-      is_control: t.isControl,
-      rank: t.rank,
-      npv_aud: Math.round(t.npv),
-      pv_benefits_aud: Math.round(t.pvBenefits),
-      pv_costs_aud: Math.round(t.pvCosts),
-      bcr: t.bcr === Infinity ? "INF" : Number(t.bcr.toFixed(4)),
-      roi: t.roi === Infinity ? "INF" : Number(t.roi.toFixed(4)),
-      effective_area_ha: Number((t.effArea ?? 0).toFixed(2)),
-      adoption_base: Number((t.adoption ?? 0).toFixed(3)),
-      risk_base: Number((t.risk ?? 0).toFixed(3)),
-    }));
+Context
+The table below compares multiple treatments against a Control. All figures reported are differences versus the Control (Δ). Positive ΔNPV means the treatment performs better than the Control financially under the stated assumptions. Negative ΔNPV means it performs worse. ΔPV Costs can be positive (more cost than control) or negative (cost saving). ΔBCR and ΔROI are summary indicators; interpret cautiously and explain limitations.
 
-    const audienceGuide = {
-      farmer: "Use plain language suitable for a farmer or on-farm manager. Avoid jargon. Focus on what drives results and what could be changed.",
-      advisor: "Use clear extension and advisory language. Explain indicators briefly and emphasise practical implications and sensitivities.",
-      policy: "Use program and policy stakeholder language. Explain indicators and assumptions carefully. Emphasise uncertainty and transparency. Do not prescribe.",
-      technical: "Use technically precise language and include brief formulas. Still remain non-prescriptive.",
-    }[audience] || "Use clear plain language.";
+Scenario assumptions
+Time horizon: ${meta.years} years
+Discount rate: ${fmt(meta.rate)}%
+Adoption multiplier (scenario): ${fmt(meta.adoptMul * 100)}%
+Risk (scenario): ${fmt(meta.risk * 100)}%
 
-    const lengthGuide = {
-      short: "Aim for a one-page interpretation (around 600 to 900 words).",
-      medium: "Aim for a two to three page interpretation (around 1200 to 1800 words).",
-      long: "Aim for a longer policy-brief style interpretation (around 2000 to 3000 words) with headings and a short executive summary.",
-    }[length] || "Use a moderate length.";
+What I need from you
+1) Start with a short “what stands out” paragraph summarising the top performers and the underperformers by ΔNPV and ΔBCR.
+2) Explain what each indicator means (NPV, PV benefits, PV costs, BCR, ROI) in a farmer-friendly way.
+3) For the top 2–3 treatments, explain the drivers: is performance driven mainly by higher benefits (e.g., yield uplift/value) or by lower costs, and how strong the trade-off is.
+4) For the weaker treatments, explain why they underperform and suggest realistic ways performance could improve. This is guidance for reflection, not rules. Examples: reduce costs, improve yield response, improve output prices/quality, refine agronomic practice, or improve targeting/timing.
+5) Finish with a neutral note on decision-making: what additional information the user might check (prices, variability, operational constraints, agronomic feasibility) before choosing.
 
-    const focusGuide = {
-      economic: "Focus primarily on economic performance and what drives PV benefits and PV costs.",
-      risk: "Focus on risk and uncertainty and how risk and adoption assumptions affect results.",
-      practical: "Focus on practical actions that could realistically improve low-performing treatments, without dictating decisions.",
-      balanced: "Provide a balanced interpretation across performance, assumptions, uncertainty, and practical levers.",
-    }[focus] || "Provide a balanced interpretation.";
+Results table (TSV, differences versus Control)
+${lines.join("\n")}
 
-    const definitions = [
-      "Definitions (use these consistently):",
-      "NPV = PV benefits − PV costs. Positive NPV indicates net economic gain relative to zero baseline for that treatment scenario.",
-      "PV benefits and PV costs are discounted sums over time using the base discount rate.",
-      "BCR = PV benefits ÷ PV costs. Values above 1 imply benefits exceed costs in present value terms.",
-      "ROI = NPV ÷ PV costs. Interpretable as net gain per dollar of PV cost.",
-      "The control is shown alongside treatments for direct comparison. When comparing against control, explain both absolute levels and differences.",
-      "Risk reduces realised benefits (not costs) in this tool. Adoption scales effective area.",
-    ].join("\n");
-
-    const improvementLevers = [
-      "Guidance for low-performing treatments (BCR near or below 1, or low ROI/NPV):",
-      "Suggest practical improvement levers as options, not rules. For example:",
-      "Reduce variable costs per hectare through input substitution, bulk purchasing, labour efficiency, or better timing.",
-      "Increase realised yields or output quantities through agronomic practice changes, better application methods, or improved varietal selection.",
-      "Increase output value assumptions by using conservative vs optimistic price scenarios and explaining sensitivity.",
-      "Improve adoption feasibility or target the treatment to suitable paddocks rather than full area rollout.",
-      "Reduce implementation risk by training, monitoring, staged rollout, and addressing known failure points.",
-      "Clarify time profile: benefits may arrive later; consider whether the analysis horizon or ramp-up assumptions are realistic.",
-    ].join("\n");
-
-    const nonPrescriptive = [
-      "Important constraints:",
-      "Do not tell the user what to choose.",
-      "Do not impose thresholds as rules.",
-      "Explain why a treatment performs well or poorly and what factors drive that result.",
-      "Treat this as decision support: show trade-offs, sensitivities, and plausible improvement paths.",
-    ].join("\n");
-
-    const context = {
-      tool_name: TOOL_NAME,
-      project: {
-        project_name: p.projectName || "",
-        organisation: p.organisation || ORG_NAME,
-        last_updated: p.lastUpdated || "",
-        short_summary: p.projectSummary || "",
-        project_goal: p.projectGoal || "",
-      },
-      settings: {
-        analysis_year_start: safeNum(s.startYear, 2026),
-        years: safeNum(s.years, 5),
-        discount_rate_base_percent: safeNum(s.discBase, 7),
-        adoption_base: safeNum(s.adoptBase, 1),
-        risk_base: safeNum(s.riskBase, 0),
-        allocate_project_items_by_area: Boolean(s.allocateProjectItems),
-      },
-      control: control ? {
-        name: control.treatmentName,
-        npv_aud: Math.round(control.npv),
-        bcr: control.bcr === Infinity ? "INF" : Number(control.bcr.toFixed(4)),
-        roi: control.roi === Infinity ? "INF" : Number(control.roi.toFixed(4)),
-      } : null,
-      ranking_metric: results.metricKey,
-      results_table: rowsForPrompt,
-      highlights: {
-        top_treatments: top.map((x) => ({ name: x.treatmentName, rank: x.rank, npv_aud: Math.round(x.npv), bcr: x.bcr === Infinity ? "INF" : Number(x.bcr.toFixed(4)) })),
-        bottom_treatments: bottom.map((x) => ({ name: x.treatmentName, rank: x.rank, npv_aud: Math.round(x.npv), bcr: x.bcr === Infinity ? "INF" : Number(x.bcr.toFixed(4)) })),
-      },
-    };
-
-    const prompt = [
-      `You are interpreting results from a farm cost–benefit analysis tool called "${TOOL_NAME}".`,
-      `${audienceGuide}`,
-      `${lengthGuide}`,
-      `${focusGuide}`,
-      ``,
-      nonPrescriptive,
-      ``,
-      definitions,
-      ``,
-      improvementLevers,
-      ``,
-      "Task: Produce a plain-English interpretation with headings.",
-      "Include: (i) a short overview of what the results show; (ii) which treatments perform better or worse and why; (iii) comparison against control; (iv) explanation of key indicators; (v) trade-offs and assumptions; (vi) practical improvement options for low performers (as guidance, not rules).",
-      "If values look counter-intuitive, explain plausible drivers (costs, yields, prices, adoption, risk, time profile) rather than assuming error.",
-      ``,
-      "Data (JSON):",
-      JSON.stringify(context, null, 2),
-    ].join("\n");
+Improvement prompts for low-performing treatments
+${improv}
+`.trim();
 
     return prompt;
   }
 
-  function bindAiTab() {
-    const buildBtn = q("buildAiPrompt");
-    const copyBtn = q("copyAiPrompt");
-    const dlBtn = q("exportPromptTxt");
-    const ta = q("copilotPreview");
+  function renderAIPrompt(comp) {
+    const prompt = buildAIPrompt(comp);
+    const block = $("#tool2AIPromptBlock");
+    if (!block) return;
 
-    if (buildBtn && ta) {
-      buildBtn.addEventListener("click", () => {
-        try {
-          const prompt = buildAiPromptFromCurrentResults();
-          ta.value = prompt;
-          toast("Prompt built from current results.", "info", 2500);
-        } catch (e) {
-          console.error(e);
-          toast("Could not build prompt. Recalculate results and try again.", "error", 5000);
-        }
-      });
-    }
+    setHTML(
+      block,
+      `
+      <details open>
+        <summary>AI-assisted interpretation prompt (copy/paste into Copilot, ChatGPT, or another model)</summary>
+        <div class="tool2-help tool2-small">
+          Copy the prompt below into your preferred AI tool. The tool does not decide for you. It explains what indicators mean, why a treatment performs well or poorly, and suggests realistic improvement levers for learning.
+        </div>
+        <div class="tool2-actions no-print">
+          <button id="tool2CopyPrompt" type="button">Copy prompt</button>
+          <button id="tool2DownloadBrief" type="button">Download prompt (text)</button>
+        </div>
+        <textarea id="tool2PromptText" style="width:100%;min-height:260px;border-radius:12px;border:1px solid rgba(0,0,0,.15);padding:.7rem;white-space:pre;">${esc(prompt)}</textarea>
+      </details>
+      `
+    );
 
-    if (copyBtn && ta) {
+    const copyBtn = $("#tool2CopyPrompt");
+    const dlBtn = $("#tool2DownloadBrief");
+    if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(ta.value || "");
-          toast("Prompt copied. Paste into Copilot or ChatGPT.", "info", 2500);
-        } catch (e) {
-          console.error(e);
-          toast("Could not copy. Select the text and copy manually.", "warn", 4500);
-        }
+        const ok = await copyToClipboard({ text: prompt });
+        showToast(ok ? "Prompt copied." : "Copy failed.");
       });
     }
-
-    if (dlBtn && ta) {
+    if (dlBtn) {
       dlBtn.addEventListener("click", () => {
-        const p = STATE.project?.projectName ? STATE.project.projectName.replace(/[^\w\-]+/g, "_").slice(0, 50) : "Project";
-        downloadText(`${TOOL_NAME.replace(/\s+/g, "_")}_${p}_AI_Prompt_${todayISO()}.txt`, ta.value || "");
-        toast("Prompt downloaded.", "info", 2500);
-      });
-    }
-
-    // Brief downloads (user pastes AI output)
-    const paste = q("aiOutputPaste");
-    const dlDoc = q("downloadBriefDoc");
-    const dlTxt = q("downloadBriefTxt");
-    const prn = q("printBriefPdf");
-
-    if (dlTxt && paste) {
-      dlTxt.addEventListener("click", () => {
-        const text = paste.value || "";
-        const p = STATE.project?.projectName ? STATE.project.projectName.replace(/[^\w\-]+/g, "_").slice(0, 50) : "Project";
-        downloadText(`${TOOL_NAME.replace(/\s+/g, "_")}_${p}_AI_Brief_${todayISO()}.txt`, text);
-        toast("Brief downloaded as text.", "info", 2500);
-      });
-    }
-
-    if (dlDoc && paste) {
-      dlDoc.addEventListener("click", () => {
-        const content = (paste.value || "").trim();
-        if (!content) {
-          toast("Paste an AI-generated interpretation first (optional), then download.", "warn", 4500);
-          return;
-        }
-        const p = STATE.project || {};
-        const title = `${TOOL_NAME} — AI interpretation`;
-        const html = `
-          <!doctype html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <title>${escapeHtml(title)}</title>
-          </head>
-          <body style="font-family:Calibri,Arial,sans-serif; font-size:11pt; line-height:1.4;">
-            <h1 style="font-size:16pt; margin:0 0 8pt 0;">${escapeHtml(TOOL_NAME)}</h1>
-            <div style="margin:0 0 10pt 0;">
-              <div><b>Project:</b> ${escapeHtml(p.projectName || "")}</div>
-              <div><b>Organisation:</b> ${escapeHtml(p.organisation || ORG_NAME)}</div>
-              <div><b>Date:</b> ${escapeHtml(todayISO())}</div>
-            </div>
-            <hr>
-            <pre style="white-space:pre-wrap; font-family:Calibri,Arial,sans-serif; margin-top:10pt;">${escapeHtml(content)}</pre>
-          </body>
-          </html>
-        `.trim();
-
-        const blob = new Blob([html], { type: "application/msword" });
-        const proj = p.projectName ? p.projectName.replace(/[^\w\-]+/g, "_").slice(0, 50) : "Project";
-        downloadBlob(`${TOOL_NAME.replace(/\s+/g, "_")}_${proj}_AI_Brief_${todayISO()}.doc`, blob);
-        toast("Word file downloaded.", "info", 2500);
-      });
-    }
-
-    if (prn && paste) {
-      prn.addEventListener("click", () => {
-        const content = (paste.value || "").trim();
-        if (!content) {
-          toast("Paste an AI-generated interpretation first (optional), then print.", "warn", 4500);
-          return;
-        }
-        const w = window.open("", "_blank", "noopener,noreferrer");
-        if (!w) {
-          toast("Popup blocked. Allow popups to print.", "warn", 5000);
-          return;
-        }
-        const p = STATE.project || {};
-        w.document.write(`
-          <!doctype html>
-          <html><head><meta charset="utf-8"><title>${escapeHtml(TOOL_NAME)} — Brief</title></head>
-          <body style="font-family:Arial,sans-serif; margin:24px;">
-            <h1 style="margin:0 0 8px 0;">${escapeHtml(TOOL_NAME)}</h1>
-            <div style="margin:0 0 12px 0;">
-              <div><b>Project:</b> ${escapeHtml(p.projectName || "")}</div>
-              <div><b>Date:</b> ${escapeHtml(todayISO())}</div>
-            </div>
-            <hr>
-            <pre style="white-space:pre-wrap; font-family:Arial,sans-serif;">${escapeHtml(content)}</pre>
-          </body></html>
-        `);
-        w.document.close();
-        w.focus();
-        setTimeout(() => {
-          w.print();
-          w.close();
-        }, 250);
+        downloadFile(`${slug(model.project.name || TOOL_NAME)}_ai_prompt.txt`, prompt, "text/plain");
       });
     }
   }
 
-  /********************************************************************
-   * Project save/load (JSON)
-   ********************************************************************/
-  function bindProjectSaveLoad() {
-    const saveBtn = q("saveProject");
-    const loadBtn = q("loadProject");
-    const loadInput = q("loadFile");
-    const startBtn = q("startBtn");
-    const startBtn2 = q("startBtn-duplicate");
+  // -----------------------------
+  // EXCEL-FIRST WORKFLOW
+  // -----------------------------
+  let parsedExcel = null;
 
-    if (startBtn) startBtn.addEventListener("click", () => setActiveTab("project"));
-    if (startBtn2) startBtn2.addEventListener("click", () => setActiveTab("project"));
+  function hasXLSX() {
+    return typeof window !== "undefined" && typeof window.XLSX !== "undefined";
+  }
 
-    if (saveBtn) {
-      saveBtn.addEventListener("click", () => {
-        try {
-          const payload = {
-            ...deepClone(STATE),
-            savedAt: new Date().toISOString(),
-            toolName: TOOL_NAME,
-          };
-          const p = STATE.project?.projectName ? STATE.project.projectName.replace(/[^\w\-]+/g, "_").slice(0, 50) : "Project";
-          downloadText(`${TOOL_NAME.replace(/\s+/g, "_")}_${p}_${todayISO()}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
-          toast("Project saved as JSON.", "info", 2500);
-        } catch (e) {
-          console.error(e);
-          toast("Could not save project.", "error", 4500);
-        }
+  function slug(s) {
+    return (s || TOOL_NAME)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+  }
+
+  function downloadFile(filename, text, mime) {
+    const blob = new Blob([text], { type: mime || "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 0);
+  }
+
+  function buildTemplateWorkbook({ includeSample = false } = {}) {
+    const settings = [
+      ["Tool", TOOL_NAME],
+      ["Project name", model.project.name || ""],
+      ["Start year", model.time.startYear],
+      ["Time horizon (years)", model.time.years],
+      ["Discount rate (base, %)", model.time.discBase],
+      ["Adoption multiplier (base, 0-1)", model.adoption.base],
+      ["Risk (base, 0-1)", model.risk.base]
+    ];
+
+    const outputs = model.outputs.map(o => ({
+      output_id: o.id,
+      output_name: o.name,
+      unit: o.unit,
+      unit_value: o.value,
+      source: o.source || ""
+    }));
+
+    const baseTreats = includeSample ? DEFAULT_FABA_2022_TREATMENTS : model.treatments;
+
+    const treatments = baseTreats.map(t => {
+      const obj = {
+        treatment_name: t.name,
+        is_control: !!t.isControl,
+        area_ha: Number(t.area ?? 100),
+        adoption: Number(t.adoption ?? 1),
+        labour_cost_per_ha: Number(t.labourCost ?? 0),
+        materials_cost_per_ha: Number(t.materialsCost ?? 0),
+        services_cost_per_ha: Number(t.servicesCost ?? 0),
+        capital_cost_year0: Number(t.capitalCost ?? 0),
+        notes: t.notes || ""
+      };
+      // Add delta columns for each output
+      model.outputs.forEach(o => {
+        obj[`delta_${o.name}`] = (t.deltas && o.id in t.deltas) ? Number(t.deltas[o.id] ?? 0) : 0;
       });
-    }
+      return obj;
+    });
 
-    if (loadBtn && loadInput) {
-      loadBtn.addEventListener("click", () => loadInput.click());
-      loadInput.addEventListener("change", async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        try {
-          const text = await file.text();
-          const obj = JSON.parse(text);
+    return { settings, outputs, treatments };
+  }
 
-          // Minimal validation
-          if (!obj || typeof obj !== "object") throw new Error("Invalid JSON.");
-          if (!obj.project || !obj.settings) throw new Error("Missing project/settings in file.");
+  function downloadExcelTemplate({ includeSample = false } = {}) {
+    const wbData = buildTemplateWorkbook({ includeSample });
+    const filename = includeSample
+      ? `${slug(model.project.name)}_sample_template.xlsx`
+      : `${slug(model.project.name)}_template.xlsx`;
 
-          // Preserve UI defaults if missing
-          const keepUi = deepClone(STATE.ui);
-          const merged = deepClone(obj);
-          merged.ui = { ...keepUi, ...(merged.ui || {}) };
-          merged.toolName = TOOL_NAME;
+    if (hasXLSX()) {
+      const XLSX = window.XLSX;
 
-          STATE = merged;
-          ensureSingleControl(STATE);
+      const wb = XLSX.utils.book_new();
+      const wsSettings = XLSX.utils.aoa_to_sheet(wbData.settings);
+      const wsOutputs = XLSX.utils.json_to_sheet(wbData.outputs);
+      const wsTreatments = XLSX.utils.json_to_sheet(wbData.treatments);
 
-          bindProjectFields();
-          bindSettingsFields();
-          rerenderAll();
-          recalcAndRender(true);
+      XLSX.utils.book_append_sheet(wb, wsSettings, "Settings");
+      XLSX.utils.book_append_sheet(wb, wsOutputs, "Outputs");
+      XLSX.utils.book_append_sheet(wb, wsTreatments, "Treatments");
 
-          toast("Project loaded.", "info", 2500);
-        } catch (err) {
-          console.error(err);
-          toast("Could not load project file. Check the JSON format.", "error", 5500);
-        } finally {
-          loadInput.value = "";
-        }
-      });
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
+
+      showToast(includeSample ? "Sample Excel template downloaded." : "Excel template downloaded.");
+    } else {
+      // CSV fallback (separate files)
+      downloadFile(filename.replace(/\.xlsx$/i, "_Settings.csv"), wbData.settings.map(r => r.join(",")).join("\n"), "text/csv");
+      downloadFile(filename.replace(/\.xlsx$/i, "_Outputs.csv"), jsonToCSV(wbData.outputs), "text/csv");
+      downloadFile(filename.replace(/\.xlsx$/i, "_Treatments.csv"), jsonToCSV(wbData.treatments), "text/csv");
+      showToast("XLSX library not found. Downloaded CSV templates instead.");
     }
   }
 
-  /********************************************************************
-   * Simulation (Monte Carlo) — focused on decision support, not exclusion
-   ********************************************************************/
-  function seededRng(seed) {
-    // Simple LCG for reproducibility if seed provided
-    let s = Math.trunc(seed) >>> 0;
+  function jsonToCSV(rows) {
+    if (!rows || !rows.length) return "";
+    const cols = Object.keys(rows[0]);
+    const out = [cols.join(",")];
+    rows.forEach(r => {
+      out.push(cols.map(c => `"${String(r[c] ?? "").replace(/"/g, '""')}"`).join(","));
+    });
+    return out.join("\n");
+  }
+
+  async function parseUploadedExcel(file) {
+    if (!file) throw new Error("No file selected.");
+
+    if (hasXLSX()) {
+      const XLSX = window.XLSX;
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+
+      const sheetNames = wb.SheetNames || [];
+      const getSheet = name => wb.Sheets[name] || wb.Sheets[sheetNames.find(n => n.toLowerCase() === name.toLowerCase())];
+
+      const wsSettings = getSheet("Settings");
+      const wsOutputs = getSheet("Outputs");
+      const wsTreatments = getSheet("Treatments");
+
+      if (!wsOutputs || !wsTreatments) {
+        throw new Error("Missing required sheets: Outputs and Treatments.");
+      }
+
+      const settingsAOA = wsSettings ? XLSX.utils.sheet_to_json(wsSettings, { header: 1, raw: true }) : [];
+      const outputs = XLSX.utils.sheet_to_json(wsOutputs, { raw: true });
+      const treatments = XLSX.utils.sheet_to_json(wsTreatments, { raw: true });
+
+      return { settingsAOA, outputs, treatments };
+    }
+
+    // CSV fallback: expect single CSV with Treatments columns (user can still load JSON elsewhere)
+    const txt = await file.text();
+    const rows = parseCSV(txt);
+    return { settingsAOA: [], outputs: [], treatments: rows };
+  }
+
+  function parseCSV(text) {
+    // minimal CSV parser (handles quoted values)
+    const lines = String(text || "").split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return [];
+    const header = splitCSVLine(lines[0]);
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = splitCSVLine(lines[i]);
+      const obj = {};
+      header.forEach((h, j) => (obj[h] = vals[j]));
+      out.push(obj);
+    }
+    return out;
+  }
+
+  function splitCSVLine(line) {
+    const out = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inQ = !inQ;
+      } else if (ch === "," && !inQ) {
+        out.push(cur);
+        cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map(s => s.trim());
+  }
+
+  function validateParsedExcel(parsed) {
+    const errs = [];
+
+    // Outputs sheet: require at least output_name + unit_value (or output_id)
+    const outputs = parsed.outputs || [];
+    if (!outputs.length) errs.push("Outputs sheet has no rows.");
+
+    // Treatments sheet: require treatment_name and is_control at minimum
+    const treatments = parsed.treatments || [];
+    if (!treatments.length) errs.push("Treatments sheet has no rows.");
+
+    const hasTreatmentName = treatments.length ? ("treatment_name" in treatments[0] || "Treatment" in treatments[0]) : false;
+    if (!hasTreatmentName) errs.push("Treatments sheet missing 'treatment_name' column.");
+
+    // Must have exactly one control
+    const controlCount = treatments.filter(r => String(r.is_control ?? r.isControl ?? "").toLowerCase() === "true" || String(r.is_control ?? "").toLowerCase() === "yes" || String(r.is_control ?? "").toLowerCase() === "1").length;
+    if (controlCount !== 1) errs.push(`Treatments sheet must mark exactly one control (found ${controlCount}).`);
+
+    return errs;
+  }
+
+  function commitParsedExcelToModel(parsed) {
+    // Settings
+    const settings = new Map();
+    (parsed.settingsAOA || []).forEach(r => {
+      if (!r || r.length < 2) return;
+      settings.set(String(r[0]).trim().toLowerCase(), r[1]);
+    });
+
+    const years = parseNumber(settings.get("time horizon (years)"));
+    const disc = parseNumber(settings.get("discount rate (base, %)"));
+    const adopt = parseNumber(settings.get("adoption multiplier (base, 0-1)"));
+    const risk = parseNumber(settings.get("risk (base, 0-1)"));
+    const startYear = parseNumber(settings.get("start year"));
+
+    if (Number.isFinite(years)) model.time.years = years;
+    if (Number.isFinite(disc)) model.time.discBase = disc;
+    if (Number.isFinite(adopt)) model.adoption.base = clamp(adopt, 0, 1);
+    if (Number.isFinite(risk)) model.risk.base = clamp(risk, 0, 1);
+    if (Number.isFinite(startYear)) model.time.startYear = startYear;
+
+    // Outputs
+    const outputs = (parsed.outputs || []).map(r => {
+      const id = r.output_id ? String(r.output_id) : uid();
+      const name = String(r.output_name ?? r.name ?? r.Output ?? "Output").trim();
+      const unit = String(r.unit ?? "").trim() || "";
+      const v = parseNumber(r.unit_value ?? r.value ?? r.UnitValue);
+      return {
+        id,
+        name,
+        unit,
+        value: Number.isFinite(v) ? v : 0,
+        source: String(r.source ?? "") || "Excel upload"
+      };
+    }).filter(o => o.name);
+
+    if (outputs.length) model.outputs = outputs;
+
+    // Treatments
+    const treatments = (parsed.treatments || []).map(r => {
+      const name = String(r.treatment_name ?? r.Treatment ?? r.name ?? "").trim();
+      if (!name) return null;
+
+      const isCtrl =
+        String(r.is_control ?? r.isControl ?? "").toLowerCase() === "true" ||
+        String(r.is_control ?? "").toLowerCase() === "yes" ||
+        String(r.is_control ?? "").toLowerCase() === "1";
+
+      const area = parseNumber(r.area_ha ?? r.area ?? 100);
+      const adoption = parseNumber(r.adoption ?? 1);
+
+      const labour = parseNumber(r.labour_cost_per_ha ?? r.labourCost ?? 0);
+      const materials = parseNumber(r.materials_cost_per_ha ?? r.materialsCost ?? 0);
+      const services = parseNumber(r.services_cost_per_ha ?? r.servicesCost ?? 0);
+      const capital = parseNumber(r.capital_cost_year0 ?? r.capitalCost ?? 0);
+
+      const t = {
+        id: uid(),
+        name,
+        isControl: !!isCtrl,
+        area: Number.isFinite(area) ? area : 0,
+        adoption: Number.isFinite(adoption) ? clamp(adoption, 0, 1) : 1,
+        deltas: {},
+        labourCost: Number.isFinite(labour) ? labour : 0,
+        materialsCost: Number.isFinite(materials) ? materials : 0,
+        servicesCost: Number.isFinite(services) ? services : 0,
+        capitalCost: Number.isFinite(capital) ? capital : 0,
+        notes: String(r.notes ?? "") || "Excel upload"
+      };
+
+      // Deltas: accept columns named delta_<outputName> or exact output names
+      model.outputs.forEach(o => {
+        let v = NaN;
+        const k1 = `delta_${o.name}`;
+        if (k1 in r) v = parseNumber(r[k1]);
+        if (!Number.isFinite(v) && o.name in r) v = parseNumber(r[o.name]);
+        t.deltas[o.id] = Number.isFinite(v) ? v : 0;
+      });
+
+      return t;
+    }).filter(Boolean);
+
+    // Enforce exactly one control; if not, attempt fix by first row
+    const ctrlIdx = treatments.findIndex(t => t.isControl);
+    if (ctrlIdx < 0) {
+      treatments[0].isControl = true;
+    } else {
+      treatments.forEach((t, i) => (t.isControl = i === ctrlIdx));
+    }
+
+    model.treatments = treatments;
+    ensureTreatmentDeltas();
+
+    // Persist as new default
+    saveModel();
+  }
+
+  async function handleParseExcel() {
+    const input = $("#excelFile") || $("#loadExcelFile") || $("#importFile");
+    if (!input || !input.files || !input.files[0]) {
+      alert("Please choose an Excel file to upload first.");
+      return;
+    }
+    const file = input.files[0];
+    try {
+      parsedExcel = await parseUploadedExcel(file);
+      const errs = validateParsedExcel(parsedExcel);
+      if (errs.length) {
+        alert("Excel file issues:\n\n- " + errs.join("\n- "));
+        parsedExcel = null;
+        return;
+      }
+      setText("#excelParseStatus", "File parsed and validated. Click ‘Apply to tool’ to update results.");
+      showToast("Excel parsed and validated.");
+    } catch (e) {
+      console.error(e);
+      alert(String(e.message || e));
+      parsedExcel = null;
+    }
+  }
+
+  function commitExcelToModel() {
+    if (!parsedExcel) {
+      alert("No parsed Excel is available. Click ‘Parse’ first.");
+      return;
+    }
+    commitParsedExcelToModel(parsedExcel);
+    parsedExcel = null;
+
+    // Re-render all key views
+    renderOutputs();
+    renderTreatments();
+    renderResultsComparison();
+    setBasicsFieldsFromModel?.();
+    showToast("Excel applied. Results updated.");
+  }
+
+  // -----------------------------
+  // EXPORT RESULTS (Excel)
+  // -----------------------------
+  function exportResultsExcel(comp) {
+    const { meta, rows } = comp;
+    const outRows = rows.map(r => ({
+      treatment: r.name,
+      is_control: r.isControl ? "Yes" : "No",
+      rank_by_delta_npv: r.isControl ? 1 : r.rank,
+      delta_npv: r.isControl ? 0 : r.inc.npv,
+      delta_pv_benefits: r.isControl ? 0 : r.inc.pvBenefits,
+      delta_pv_costs: r.isControl ? 0 : r.inc.pvCosts,
+      delta_bcr: r.isControl ? 0 : r.inc.bcr,
+      delta_roi_pct: r.isControl ? 0 : r.inc.roi,
+      abs_npv: r.abs.npv,
+      abs_pv_benefits: r.abs.pvBenefits,
+      abs_pv_costs: r.abs.pvCosts,
+      abs_bcr: r.abs.bcr,
+      abs_roi_pct: r.abs.roi
+    }));
+
+    const metaRows = [
+      { key: "Tool", value: TOOL_NAME },
+      { key: "Project", value: model.project.name || "" },
+      { key: "Years", value: meta.years },
+      { key: "Discount rate (%)", value: meta.rate },
+      { key: "Adoption multiplier", value: meta.adoptMul },
+      { key: "Risk", value: meta.risk }
+    ];
+
+    if (hasXLSX()) {
+      const XLSX = window.XLSX;
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaRows), "Scenario");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outRows), "Results_Comparison");
+
+      // Inputs for audit
+      const outputs = model.outputs.map(o => ({
+        output_name: o.name,
+        unit: o.unit,
+        unit_value: o.value
+      }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outputs), "Inputs_Outputs");
+
+      const treats = model.treatments.map(t => {
+        const row = {
+          treatment_name: t.name,
+          is_control: t.isControl,
+          area_ha: t.area,
+          adoption: t.adoption,
+          labour_cost_per_ha: t.labourCost,
+          materials_cost_per_ha: t.materialsCost,
+          services_cost_per_ha: t.servicesCost,
+          capital_cost_year0: t.capitalCost,
+          notes: t.notes || ""
+        };
+        model.outputs.forEach(o => {
+          row[`delta_${o.name}`] = t.deltas?.[o.id] ?? 0;
+        });
+        return row;
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(treats), "Inputs_Treatments");
+
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${slug(model.project.name)}_results.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
+
+      showToast("Results exported (Excel).");
+    } else {
+      downloadFile(`${slug(model.project.name)}_results.csv`, jsonToCSV(outRows), "text/csv");
+      showToast("XLSX library not found. Exported CSV instead.");
+    }
+  }
+
+  // -----------------------------
+  // UI: PROJECT / SETTINGS BINDING (keeps your existing fields working)
+  // -----------------------------
+  function setBasicsFieldsFromModel() {
+    if ($("#projectName")) $("#projectName").value = model.project.name || "";
+    if ($("#projectLead")) $("#projectLead").value = model.project.lead || "";
+    if ($("#analystNames")) $("#analystNames").value = model.project.analysts || "";
+    if ($("#projectTeam")) $("#projectTeam").value = model.project.team || "";
+    if ($("#projectSummary")) $("#projectSummary").value = model.project.summary || "";
+    if ($("#projectObjectives")) $("#projectObjectives").value = model.project.objectives || "";
+    if ($("#projectActivities")) $("#projectActivities").value = model.project.activities || "";
+    if ($("#stakeholderGroups")) $("#stakeholderGroups").value = model.project.stakeholders || "";
+    if ($("#lastUpdated")) $("#lastUpdated").value = model.project.lastUpdated || "";
+    if ($("#projectGoal")) $("#projectGoal").value = model.project.goal || "";
+    if ($("#withProject")) $("#withProject").value = model.project.withProject || "";
+    if ($("#withoutProject")) $("#withoutProject").value = model.project.withoutProject || "";
+    if ($("#organisation")) $("#organisation").value = model.project.organisation || "";
+    if ($("#contactEmail")) $("#contactEmail").value = model.project.contactEmail || "";
+    if ($("#contactPhone")) $("#contactPhone").value = model.project.contactPhone || "";
+
+    if ($("#startYear")) $("#startYear").value = model.time.startYear;
+    if ($("#years")) $("#years").value = model.time.years;
+    if ($("#discBase")) $("#discBase").value = model.time.discBase;
+    if ($("#discLow")) $("#discLow").value = model.time.discLow;
+    if ($("#discHigh")) $("#discHigh").value = model.time.discHigh;
+    if ($("#mirrFinance")) $("#mirrFinance").value = model.time.mirrFinance;
+    if ($("#mirrReinvest")) $("#mirrReinvest").value = model.time.mirrReinvest;
+
+    if ($("#adoptBase")) $("#adoptBase").value = model.adoption.base;
+    if ($("#adoptLow")) $("#adoptLow").value = model.adoption.low;
+    if ($("#adoptHigh")) $("#adoptHigh").value = model.adoption.high;
+
+    if ($("#riskBase")) $("#riskBase").value = model.risk.base;
+    if ($("#riskLow")) $("#riskLow").value = model.risk.low;
+    if ($("#riskHigh")) $("#riskHigh").value = model.risk.high;
+
+    // Discount schedule inputs if present
+    const sched = model.time.discountSchedule || DEFAULT_DISCOUNT_SCHEDULE;
+    $$("input[data-disc-period]").forEach(inp => {
+      const idx = +inp.dataset.discPeriod;
+      const scenario = inp.dataset.scenario;
+      const row = sched[idx];
+      if (!row) return;
+      let v = "";
+      if (scenario === "low") v = row.low;
+      else if (scenario === "base") v = row.base;
+      else if (scenario === "high") v = row.high;
+      inp.value = v ?? "";
+    });
+  }
+
+  // -----------------------------
+  // TABS (keep your existing behaviour)
+  // -----------------------------
+  function switchTab(target) {
+    if (!target) return;
+
+    const navEls = $$("[data-tab],[data-tab-target],[data-tab-jump]");
+    navEls.forEach(el => {
+      const key = el.dataset.tab || el.dataset.tabTarget || el.dataset.tabJump;
+      const isActive = key === target;
+      el.classList.toggle("active", isActive);
+      el.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    const panels = $$(".tab-panel");
+    panels.forEach(p => {
+      const key = p.dataset.tabPanel || (p.id ? p.id.replace(/^tab-/, "") : "");
+      const match = key === target || p.id === target || p.id === "tab-" + target;
+      const show = !!match;
+      p.classList.toggle("active", show);
+      p.hidden = !show;
+      p.setAttribute("aria-hidden", show ? "false" : "true");
+      p.style.display = show ? "" : "none";
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function initTabs() {
+    document.addEventListener("click", e => {
+      const el = e.target.closest("[data-tab],[data-tab-target],[data-tab-jump]");
+      if (!el) return;
+      const target = el.dataset.tab || el.dataset.tabTarget || el.dataset.tabJump;
+      if (!target) return;
+      e.preventDefault();
+      switchTab(target);
+    });
+
+    const activeNav =
+      document.querySelector("[data-tab].active, [data-tab-target].active, [data-tab-jump].active") ||
+      document.querySelector("[data-tab], [data-tab-target], [data-tab-jump]");
+    if (activeNav) {
+      const target = activeNav.dataset.tab || activeNav.dataset.tabTarget || activeNav.dataset.tabJump;
+      if (target) switchTab(target);
+    }
+  }
+
+  // -----------------------------
+  // OUTPUTS RENDER
+  // -----------------------------
+  function renderOutputs() {
+    const host = $("#outputsTable") || $("#outputsBody") || $("#outputs");
+    if (!host) return;
+
+    const rows = model.outputs.map((o, idx) => {
+      return `
+        <tr>
+          <td><input data-out-field="name" data-out-id="${esc(o.id)}" value="${esc(o.name)}"/></td>
+          <td><input data-out-field="unit" data-out-id="${esc(o.id)}" value="${esc(o.unit || "")}"/></td>
+          <td><input data-out-field="value" data-out-id="${esc(o.id)}" value="${esc(o.value)}" /></td>
+          <td class="tool2-muted tool2-small">${esc(o.source || "")}</td>
+          <td><button type="button" data-out-action="del" data-out-id="${esc(o.id)}">Remove</button></td>
+        </tr>
+      `;
+    }).join("");
+
+    const table = `
+      <div class="tool2-help tool2-small">
+        Outputs are valued per unit. Treatment deltas represent changes versus the control (e.g. yield uplift t/ha).
+      </div>
+      <div class="tool2-table-wrap">
+        <table class="tool2-compare" style="min-width:900px;width:100%">
+          <thead>
+            <tr>
+              <th>Output</th>
+              <th>Unit</th>
+              <th>Unit value</th>
+              <th>Source</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="tool2-actions no-print">
+        <button id="addOutput" type="button">Add output</button>
+      </div>
+    `;
+    setHTML(host, table);
+
+    const addBtn = $("#addOutput");
+    if (addBtn) {
+      addBtn.onclick = () => {
+        model.outputs.push({ id: uid(), name: "New output", unit: "", value: 0, source: "User input" });
+        ensureTreatmentDeltas();
+        saveModel();
+        renderOutputs();
+        renderTreatments();
+        renderResultsComparison();
+      };
+    }
+  }
+
+  // -----------------------------
+  // TREATMENTS RENDER
+  // - Capital cost ($, year 0) appears before Total cost ($/ha)
+  // - Totals update dynamically when cost components change
+  // -----------------------------
+  function totalOpCostPerHa(t) {
+    return (Number(t.labourCost) || 0) + (Number(t.materialsCost) || 0) + (Number(t.servicesCost) || 0);
+  }
+
+  function renderTreatments() {
+    const host = $("#treatmentsTable") || $("#treatmentsBody") || $("#treatments");
+    if (!host) return;
+
+    const controlTip = "Exactly one treatment must be marked as the control. All results are compared against it.";
+    const capTip = "Capital cost is a year-0 lump sum (e.g. once-off equipment purchase). It is not part of operating $/ha totals.";
+    const opTip = "Operating costs are per hectare per year (labour, materials, services). Total cost ($/ha) updates automatically.";
+    const deltaTip = "Delta values represent differences versus the control (e.g. yield uplift). Control deltas should be 0.";
+
+    const headerDeltaCols = model.outputs
+      .map(o => `<th>${esc(o.name)} Δ <span class="tool2-tipicon" tabindex="0" data-tip="${esc(deltaTip)}">i</span></th>`)
+      .join("");
+
+    const bodyRows = model.treatments
+      .map(t => {
+        const opTotal = totalOpCostPerHa(t);
+        const deltaCells = model.outputs.map(o => {
+          const v = Number(t.deltas?.[o.id] ?? 0) || 0;
+          return `<td><input data-trt-delta="1" data-trt-id="${esc(t.id)}" data-out-id="${esc(o.id)}" value="${esc(v)}"/></td>`;
+        }).join("");
+
+        return `
+          <tr>
+            <td><input data-trt-field="name" data-trt-id="${esc(t.id)}" value="${esc(t.name)}"/></td>
+            <td style="text-align:center">
+              <input type="radio" name="controlRadio" data-trt-field="isControl" data-trt-id="${esc(t.id)}" ${t.isControl ? "checked" : ""}/>
+              <span class="tool2-tipicon" tabindex="0" data-tip="${esc(controlTip)}">i</span>
+            </td>
+            <td><input data-trt-field="area" data-trt-id="${esc(t.id)}" value="${esc(t.area)}"/></td>
+            <td><input data-trt-field="adoption" data-trt-id="${esc(t.id)}" value="${esc(t.adoption)}"/></td>
+
+            <td><input data-trt-field="labourCost" data-trt-id="${esc(t.id)}" value="${esc(t.labourCost)}"/></td>
+            <td><input data-trt-field="materialsCost" data-trt-id="${esc(t.id)}" value="${esc(t.materialsCost)}"/></td>
+            <td><input data-trt-field="servicesCost" data-trt-id="${esc(t.id)}" value="${esc(t.servicesCost)}"/></td>
+
+            <td>
+              <input data-trt-field="capitalCost" data-trt-id="${esc(t.id)}" value="${esc(t.capitalCost)}"/>
+              <span class="tool2-tipicon" tabindex="0" data-tip="${esc(capTip)}">i</span>
+            </td>
+
+            <td class="tool2-cell-neutral"><strong>${money(opTotal)}</strong><div class="tool2-small tool2-muted">Operating ($/ha/yr)</div></td>
+
+            ${deltaCells}
+
+            <td><input data-trt-field="notes" data-trt-id="${esc(t.id)}" value="${esc(t.notes || "")}"/></td>
+            <td><button type="button" data-trt-action="del" data-trt-id="${esc(t.id)}">Remove</button></td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const table = `
+      <div class="tool2-help tool2-small">
+        <div><strong>${TOOL_NAME}</strong> compares each treatment against the control using incremental CBA. Low-performing treatments remain visible to support learning and diagnosis.</div>
+        <div style="margin-top:.35rem">
+          <span class="tool2-tipicon" tabindex="0" data-tip="${esc(opTip)}">i</span>
+          Operating costs update the totals instantly as you edit labour/materials/services.
+        </div>
+      </div>
+
+      <div class="tool2-table-wrap">
+        <table class="tool2-compare" style="min-width:1200px">
+          <thead>
+            <tr>
+              <th>Treatment</th>
+              <th>Control</th>
+              <th>Area (ha)</th>
+              <th>Adoption (0–1)</th>
+              <th>Labour ($/ha)</th>
+              <th>Materials ($/ha)</th>
+              <th>Services ($/ha)</th>
+              <th>Capital cost ($, year 0)</th>
+              <th>Total cost ($/ha)</th>
+              ${headerDeltaCols}
+              <th>Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+
+      <div class="tool2-actions no-print">
+        <button id="addTreatment" type="button">Add treatment</button>
+      </div>
+    `;
+
+    setHTML(host, table);
+
+    const addBtn = $("#addTreatment");
+    if (addBtn) {
+      addBtn.onclick = () => {
+        const t = {
+          id: uid(),
+          name: "New treatment",
+          isControl: false,
+          area: 100,
+          adoption: 1,
+          deltas: {},
+          labourCost: 0,
+          materialsCost: 0,
+          servicesCost: 0,
+          capitalCost: 0,
+          notes: ""
+        };
+        model.outputs.forEach(o => (t.deltas[o.id] = 0));
+        model.treatments.push(t);
+        ensureTreatmentDeltas();
+        saveModel();
+        renderTreatments();
+        renderResultsComparison();
+      };
+    }
+  }
+
+  // -----------------------------
+  // EVENTS: Inputs update model live
+  // -----------------------------
+  function bindLiveInputs() {
+    // Project/settings fields
+    document.addEventListener("input", e => {
+      const t = e.target;
+      if (!t) return;
+
+      // Discount schedule inputs
+      if (t.dataset && t.dataset.discPeriod !== undefined) {
+        const idx = +t.dataset.discPeriod;
+        const scenario = t.dataset.scenario;
+        if (!model.time.discountSchedule) model.time.discountSchedule = JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_SCHEDULE));
+        const row = model.time.discountSchedule[idx];
+        if (row && scenario) {
+          const v = parseNumber(t.value);
+          if (scenario === "low") row.low = v;
+          if (scenario === "base") row.base = v;
+          if (scenario === "high") row.high = v;
+          saveModel();
+          renderResultsComparison();
+        }
+        return;
+      }
+
+      // Outputs
+      if (t.matches("[data-out-field]")) {
+        const id = t.dataset.outId;
+        const field = t.dataset.outField;
+        const o = model.outputs.find(x => x.id === id);
+        if (!o) return;
+        if (field === "value") o.value = parseNumber(t.value) || 0;
+        else o[field] = t.value;
+        ensureTreatmentDeltas();
+        saveModel();
+        renderTreatments();
+        renderResultsComparison();
+        return;
+      }
+
+      // Treatments (fields)
+      if (t.matches("[data-trt-field]")) {
+        const id = t.dataset.trtId;
+        const field = t.dataset.trtField;
+        const tr = model.treatments.find(x => x.id === id);
+        if (!tr) return;
+
+        if (field === "isControl") {
+          // handled on change/radio, not here
+          return;
+        }
+
+        if (field === "area" || field === "adoption") {
+          const v = parseNumber(t.value);
+          tr[field] = Number.isFinite(v) ? (field === "adoption" ? clamp(v, 0, 1) : v) : tr[field];
+        } else if (field === "labourCost" || field === "materialsCost" || field === "servicesCost" || field === "capitalCost") {
+          const v = parseNumber(t.value);
+          tr[field] = Number.isFinite(v) ? v : 0;
+        } else {
+          tr[field] = t.value;
+        }
+
+        saveModel();
+        // Re-render treatments to update Total cost ($/ha) column instantly
+        renderTreatments();
+        renderResultsComparison();
+        return;
+      }
+
+      // Treatment deltas
+      if (t.matches("[data-trt-delta]")) {
+        const trtId = t.dataset.trtId;
+        const outId = t.dataset.outId;
+        const tr = model.treatments.find(x => x.id === trtId);
+        if (!tr) return;
+        const v = parseNumber(t.value);
+        tr.deltas[outId] = Number.isFinite(v) ? v : 0;
+        saveModel();
+        renderResultsComparison();
+        return;
+      }
+
+      // Global scenario params
+      const id = t.id;
+      if (!id) return;
+
+      switch (id) {
+        case "projectName": model.project.name = t.value; break;
+        case "projectLead": model.project.lead = t.value; break;
+        case "analystNames": model.project.analysts = t.value; break;
+        case "projectTeam": model.project.team = t.value; break;
+        case "projectSummary": model.project.summary = t.value; break;
+        case "projectObjectives": model.project.objectives = t.value; break;
+        case "projectActivities": model.project.activities = t.value; break;
+        case "stakeholderGroups": model.project.stakeholders = t.value; break;
+        case "lastUpdated": model.project.lastUpdated = t.value; break;
+        case "projectGoal": model.project.goal = t.value; break;
+        case "withProject": model.project.withProject = t.value; break;
+        case "withoutProject": model.project.withoutProject = t.value; break;
+        case "organisation": model.project.organisation = t.value; break;
+        case "contactEmail": model.project.contactEmail = t.value; break;
+        case "contactPhone": model.project.contactPhone = t.value; break;
+
+        case "startYear": model.time.startYear = parseNumber(t.value) || model.time.startYear; break;
+        case "years": model.time.years = parseNumber(t.value) || model.time.years; break;
+        case "discBase": model.time.discBase = parseNumber(t.value) || model.time.discBase; break;
+        case "discLow": model.time.discLow = parseNumber(t.value) || model.time.discLow; break;
+        case "discHigh": model.time.discHigh = parseNumber(t.value) || model.time.discHigh; break;
+        case "mirrFinance": model.time.mirrFinance = parseNumber(t.value) || model.time.mirrFinance; break;
+        case "mirrReinvest": model.time.mirrReinvest = parseNumber(t.value) || model.time.mirrReinvest; break;
+
+        case "adoptBase": model.adoption.base = clamp(parseNumber(t.value) || model.adoption.base, 0, 1); break;
+        case "adoptLow": model.adoption.low = clamp(parseNumber(t.value) || model.adoption.low, 0, 1); break;
+        case "adoptHigh": model.adoption.high = clamp(parseNumber(t.value) || model.adoption.high, 0, 1); break;
+
+        case "riskBase": model.risk.base = clamp(parseNumber(t.value) || model.risk.base, 0, 1); break;
+        case "riskLow": model.risk.low = clamp(parseNumber(t.value) || model.risk.low, 0, 1); break;
+        case "riskHigh": model.risk.high = clamp(parseNumber(t.value) || model.risk.high, 0, 1); break;
+
+        case "simN": model.sim.n = parseNumber(t.value) || model.sim.n; break;
+        case "simVarPct": model.sim.variationPct = parseNumber(t.value) || model.sim.variationPct; break;
+        case "simVaryOutputs": model.sim.varyOutputs = String(t.value) === "true"; break;
+        case "simVaryTreatCosts": model.sim.varyTreatCosts = String(t.value) === "true"; break;
+        case "randSeed": model.sim.seed = t.value ? parseNumber(t.value) : null; break;
+      }
+
+      saveModel();
+      renderResultsComparison();
+    });
+
+    // Control radio change
+    document.addEventListener("change", e => {
+      const t = e.target;
+      if (!t) return;
+
+      if (t.matches("input[type='radio'][name='controlRadio'][data-trt-field='isControl']")) {
+        const id = t.dataset.trtId;
+        model.treatments.forEach(tr => (tr.isControl = tr.id === id));
+        // Enforce control deltas = 0
+        const ctrl = model.treatments.find(x => x.isControl);
+        if (ctrl) model.outputs.forEach(o => (ctrl.deltas[o.id] = 0));
+        saveModel();
+        renderTreatments();
+        renderResultsComparison();
+        showToast("Control updated.");
+      }
+    });
+
+    // Remove rows
+    document.addEventListener("click", e => {
+      const btn = e.target.closest("[data-trt-action='del'], [data-out-action='del']");
+      if (!btn) return;
+
+      if (btn.dataset.trtAction === "del") {
+        const id = btn.dataset.trtId;
+        const idx = model.treatments.findIndex(x => x.id === id);
+        if (idx >= 0) {
+          const wasControl = !!model.treatments[idx].isControl;
+          model.treatments.splice(idx, 1);
+          if (wasControl && model.treatments.length) model.treatments[0].isControl = true;
+          ensureTreatmentDeltas();
+          saveModel();
+          renderTreatments();
+          renderResultsComparison();
+          showToast("Treatment removed.");
+        }
+      }
+
+      if (btn.dataset.outAction === "del") {
+        const id = btn.dataset.outId;
+        const idx = model.outputs.findIndex(x => x.id === id);
+        if (idx >= 0) {
+          model.outputs.splice(idx, 1);
+          ensureTreatmentDeltas();
+          saveModel();
+          renderOutputs();
+          renderTreatments();
+          renderResultsComparison();
+          showToast("Output removed.");
+        }
+      }
+    });
+
+    // Main actions if present
+    document.addEventListener("click", e => {
+      const el = e.target.closest("#recalc, #getResults, [data-action='recalc']");
+      if (!el) return;
+      e.preventDefault();
+      renderResultsComparison();
+      showToast("Results recalculated.");
+    });
+  }
+
+  // -----------------------------
+  // EXCEL WORKFLOW BUTTONS (IDs from your existing UI; robust to missing)
+  // -----------------------------
+  function bindExcelButtons() {
+    const parseExcelBtn = $("#parseExcel");
+    const importExcelBtn = $("#importExcel");
+    const downloadTemplateBtn = $("#downloadTemplate");
+    const downloadSampleBtn = $("#downloadSample");
+
+    if (parseExcelBtn) parseExcelBtn.addEventListener("click", e => { e.preventDefault(); handleParseExcel(); });
+    if (importExcelBtn) importExcelBtn.addEventListener("click", e => { e.preventDefault(); commitExcelToModel(); });
+
+    if (downloadTemplateBtn) downloadTemplateBtn.addEventListener("click", e => { e.preventDefault(); downloadExcelTemplate({ includeSample: false }); });
+    if (downloadSampleBtn) downloadSampleBtn.addEventListener("click", e => { e.preventDefault(); downloadExcelTemplate({ includeSample: true }); });
+
+    const help = $("#excelWorkflowHelp") || $("#excelHelp") || $("#excelInstructions");
+    if (help) {
+      setHTML(
+        help,
+        `
+          <div class="tool2-help">
+            <strong>Excel-first workflow (recommended)</strong><br/>
+            1) Download a template (sample or scenario-specific).<br/>
+            2) Edit rows in Excel (treatments, costs, and deltas vs control).<br/>
+            3) Save the file and upload it here.<br/>
+            4) Click Parse, then Apply to tool. Results update automatically and become the new default for analysis.
+          </div>
+        `
+      );
+    }
+  }
+
+  // -----------------------------
+  // OPTIONAL: SIMULATION (kept lightweight; supports “why underperform” exploration)
+  // -----------------------------
+  function rng(seed) {
+    let t = (seed || Math.floor(Math.random() * 2 ** 31)) >>> 0;
     return () => {
-      s = (1664525 * s + 1013904223) >>> 0;
-      return s / 4294967296;
+      t += 0x6d2b79f5;
+      let x = t;
+      x = Math.imul(x ^ (x >>> 15), 1 | x);
+      x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
     };
   }
 
-  function uniform(rng, a, b) {
-    return a + (b - a) * rng();
-  }
-
-  function varyByPct(rng, x, pct) {
-    const p = Math.max(0, pct) / 100;
-    const m = uniform(rng, 1 - p, 1 + p);
-    return x * m;
-  }
-
-  function computeIndicatorsForTreatmentUnderScenario(state, treatment, overrides) {
-    const base = deepClone(state);
-    const s = base.settings;
-
-    if (overrides.discBase != null) s.discBase = overrides.discBase;
-    if (overrides.adoptBase != null) s.adoptBase = overrides.adoptBase;
-    if (overrides.riskBase != null) s.riskBase = overrides.riskBase;
-
-    // Optional value perturbations
-    if (overrides.outputsValueMap) {
-      (base.outputs || []).forEach((o) => {
-        if (overrides.outputsValueMap.has(o.id)) o.valuePerUnit = overrides.outputsValueMap.get(o.id);
-      });
-    }
-    if (overrides.treatCostMap) {
-      (base.treatments || []).forEach((t) => {
-        if (overrides.treatCostMap.has(t.id)) {
-          const { labourCostPerHa, inputCostPerHa } = overrides.treatCostMap.get(t.id);
-          t.labourCostPerHa = labourCostPerHa;
-          t.inputCostPerHa = inputCostPerHa;
-        }
-      });
-    }
-    if (overrides.costAnnualMap) {
-      (base.costs || []).forEach((c) => {
-        if (overrides.costAnnualMap.has(c.id)) c.annualValue = overrides.costAnnualMap.get(c.id);
-      });
-    }
-
-    const t2 = (base.treatments || []).find((x) => x.id === treatment.id);
-    return computeIndicatorsForTreatment(base, t2 || treatment);
-  }
-
-  function drawHistogram(canvas, values, bins = 18, label = "") {
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-
-    ctx.clearRect(0, 0, w, h);
-
-    if (!values.length) {
-      ctx.fillText("No data", 10, 20);
+  function runSimulation() {
+    const host = $("#simResults") || $("#simulationResults");
+    if (!host) {
+      showToast("Simulation panel not found in the page.");
       return;
     }
 
-    const finite = values.filter((x) => Number.isFinite(x));
-    if (!finite.length) {
-      ctx.fillText("No finite values", 10, 20);
-      return;
-    }
+    const rate = Number($("#discBase")?.value ?? model.time.discBase) || model.time.discBase;
+    const years = Number($("#years")?.value ?? model.time.years) || model.time.years;
+    const adoptMul = Number($("#adoptBase")?.value ?? model.adoption.base) ?? model.adoption.base;
+    const risk = Number($("#riskBase")?.value ?? model.risk.base) ?? model.risk.base;
 
-    const min = Math.min(...finite);
-    const max = Math.max(...finite);
-    const span = max - min || 1;
+    const N = Math.max(100, Math.floor(Number(model.sim.n) || 1000));
+    const varPct = clamp(Number(model.sim.variationPct) || 20, 0, 200) / 100;
+    const varyOutputs = !!model.sim.varyOutputs;
+    const varyCosts = !!model.sim.varyTreatCosts;
 
-    const counts = new Array(bins).fill(0);
-    finite.forEach((v) => {
-      const k = Math.min(bins - 1, Math.max(0, Math.floor(((v - min) / span) * bins)));
-      counts[k] += 1;
-    });
+    const rand = rng(model.sim.seed || null);
 
-    const maxC = Math.max(...counts) || 1;
+    const baseComp = computeComparison({ rate, years, adoptMul, risk });
+    const treatments = baseComp.rows;
 
-    // axes
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "#000";
-    ctx.beginPath();
-    ctx.moveTo(36, 10);
-    ctx.lineTo(36, h - 26);
-    ctx.lineTo(w - 10, h - 26);
-    ctx.stroke();
+    // Track: probability best by ΔNPV; distribution of ΔNPV for each
+    const bestCount = new Map(treatments.map(t => [t.id, 0]));
+    const deltaNpvSums = new Map(treatments.map(t => [t.id, 0]));
+    const deltaNpvSums2 = new Map(treatments.map(t => [t.id, 0]));
+    const bcrAbove1 = new Map(treatments.map(t => [t.id, 0]));
 
-    // bars (default fill)
-    const plotW = (w - 10) - 36;
-    const plotH = (h - 26) - 10;
-    const barW = plotW / bins;
+    // Pre-cache original values
+    const baseOutputValues = model.outputs.map(o => o.value);
+    const baseTreatCosts = model.treatments.map(t => ({
+      labourCost: t.labourCost,
+      materialsCost: t.materialsCost,
+      servicesCost: t.servicesCost,
+      capitalCost: t.capitalCost
+    }));
 
-    for (let i = 0; i < bins; i++) {
-      const bh = (counts[i] / maxC) * plotH;
-      const x = 36 + i * barW;
-      const y = (h - 26) - bh;
-      ctx.fillRect(x + 1, y, Math.max(1, barW - 2), bh);
-    }
-
-    // labels
-    ctx.fillStyle = "#000";
-    ctx.font = "12px Arial";
-    ctx.fillText(label, 36, 10);
-    ctx.font = "10px Arial";
-    ctx.fillText(fmtNumber2.format(min), 36, h - 8);
-    ctx.fillText(fmtNumber2.format(max), w - 10 - 46, h - 8);
-  }
-
-  function bindSimulation() {
-    const runBtn = q("runSim");
-    if (!runBtn) return;
-
-    runBtn.addEventListener("click", () => {
-      try {
-        const baseResults = STATE.cache.lastResults || computeAllResults(STATE);
-
-        // Choose the best-ranked non-control treatment for simulation focus (still decision support)
-        const focus = baseResults.indicators
-          .filter((x) => !x.isControl)
-          .slice()
-          .sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999))[0];
-
-        if (!focus) {
-          toast("Add at least one non-control treatment before running simulation.", "warn", 4500);
-          return;
-        }
-
-        const s = STATE.settings;
-        const N = Math.max(100, Math.trunc(safeNum(getInputValue("simN"), s.simN || 1000)));
-        const discLow = safeNum(s.discLow, 3) / 100;
-        const discHigh = safeNum(s.discHigh, 10) / 100;
-        const adoptLow = clamp(safeNum(s.adoptLow, 0.6), 0, 1);
-        const adoptHigh = clamp(safeNum(s.adoptHigh, 1), 0, 1);
-        const riskLow = clamp(safeNum(s.riskLow, 0.05), 0, 1);
-        const riskHigh = clamp(safeNum(s.riskHigh, 0.25), 0, 1);
-
-        const varPct = clamp(safeNum(getInputValue("simVarPct"), s.simVarPct || 0), 0, 100);
-        const varyOutputs = ynToBool(getInputValue("simVaryOutputs"), Boolean(s.simVaryOutputs));
-        const varyTreatCosts = ynToBool(getInputValue("simVaryTreatCosts"), Boolean(s.simVaryTreatCosts));
-        const varyInputCosts = ynToBool(getInputValue("simVaryInputCosts"), Boolean(s.simVaryInputCosts));
-
-        const seedVal = safeStr(getInputValue("randSeed"), "").trim();
-        const rng = seedVal ? seededRng(safeNum(seedVal, 12345)) : Math.random;
-
-        const npvs = [];
-        const bcrs = [];
-
-        const status = q("simStatus");
-        if (status) status.textContent = `Running ${N} simulations for: ${focus.treatmentName}.`;
-
-        const tFocus = (STATE.treatments || []).find((t) => t.id === focus.treatmentId);
-
-        // Pre-store base values for perturbation
-        const baseOutputVals = new Map((STATE.outputs || []).map((o) => [o.id, safeNum(o.valuePerUnit, 0)]));
-        const baseTreatCosts = new Map((STATE.treatments || []).map((t) => [t.id, { labourCostPerHa: safeNum(t.labourCostPerHa, 0), inputCostPerHa: safeNum(t.inputCostPerHa, 0) }]));
-        const baseCostAnnual = new Map((STATE.costs || []).map((c) => [c.id, safeNum(c.annualValue, 0)]));
-
-        // Run
-        for (let i = 0; i < N; i++) {
-          const disc = uniform(rng, discLow, discHigh) * 100; // percent
-          const adopt = uniform(rng, adoptLow, adoptHigh);
-          const risk = uniform(rng, riskLow, riskHigh);
-
-          const overrides = { discBase: disc, adoptBase: adopt, riskBase: risk };
-
-          if (varyOutputs) {
-            const map = new Map();
-            baseOutputVals.forEach((v, k) => map.set(k, varyByPct(rng, v, varPct)));
-            overrides.outputsValueMap = map;
-          }
-
-          if (varyTreatCosts) {
-            const map = new Map();
-            baseTreatCosts.forEach((v, k) => {
-              map.set(k, {
-                labourCostPerHa: varyByPct(rng, v.labourCostPerHa, varPct),
-                inputCostPerHa: varyByPct(rng, v.inputCostPerHa, varPct),
-              });
-            });
-            overrides.treatCostMap = map;
-          }
-
-          if (varyInputCosts) {
-            const map = new Map();
-            baseCostAnnual.forEach((v, k) => map.set(k, varyByPct(rng, v, varPct)));
-            overrides.costAnnualMap = map;
-          }
-
-          const ind = computeIndicatorsForTreatmentUnderScenario(STATE, tFocus, overrides);
-          npvs.push(ind.npv);
-          bcrs.push(ind.bcr === Infinity ? NaN : ind.bcr);
-        }
-
-        // Summary stats
-        const finiteNpv = npvs.filter(Number.isFinite);
-        const finiteBcr = bcrs.filter(Number.isFinite);
-
-        const stats = (arr) => {
-          const x = arr.slice().sort((a, b) => a - b);
-          const n = x.length || 1;
-          const mean = x.reduce((s, v) => s + v, 0) / n;
-          const median = x[Math.floor(n / 2)];
-          return { min: x[0], max: x[n - 1], mean, median };
-        };
-
-        const npvS = finiteNpv.length ? stats(finiteNpv) : null;
-        const bcrS = finiteBcr.length ? stats(finiteBcr) : null;
-
-        // Probabilities
-        const prob = (arr, fn) => {
-          const x = arr.filter(Number.isFinite);
-          if (!x.length) return NaN;
-          return x.filter(fn).length / x.length;
-        };
-
-        const target = safeNum(getInputValue("targetBCR"), safeNum(s.targetBCR, 2));
-
-        // Write to UI
-        const setVal = (id, v, fmtFn) => {
-          const node = q(id);
-          if (!node) return;
-          if (!Number.isFinite(v)) node.textContent = "n/a";
-          else node.textContent = fmtFn ? fmtFn(v) : fmtNumber2.format(v);
-        };
-
-        if (npvS) {
-          setVal("simNpvMin", npvS.min, (x) => fmtCurrency.format(x));
-          setVal("simNpvMax", npvS.max, (x) => fmtCurrency.format(x));
-          setVal("simNpvMean", npvS.mean, (x) => fmtCurrency.format(x));
-          setVal("simNpvMedian", npvS.median, (x) => fmtCurrency.format(x));
-          setVal("simNpvProb", prob(finiteNpv, (x) => x > 0), (x) => fmtPercent1.format(x));
-        } else {
-          ["simNpvMin","simNpvMax","simNpvMean","simNpvMedian","simNpvProb"].forEach((id) => q(id) && (q(id).textContent = "n/a"));
-        }
-
-        if (bcrS) {
-          setVal("simBcrMin", bcrS.min, (x) => fmtNumber3.format(x));
-          setVal("simBcrMax", bcrS.max, (x) => fmtNumber3.format(x));
-          setVal("simBcrMean", bcrS.mean, (x) => fmtNumber3.format(x));
-          setVal("simBcrMedian", bcrS.median, (x) => fmtNumber3.format(x));
-          setVal("simBcrProb1", prob(finiteBcr, (x) => x > 1), (x) => fmtPercent1.format(x));
-          setVal("simBcrProbTarget", prob(finiteBcr, (x) => x > target), (x) => fmtPercent1.format(x));
-        } else {
-          ["simBcrMin","simBcrMax","simBcrMean","simBcrMedian","simBcrProb1","simBcrProbTarget"].forEach((id) => q(id) && (q(id).textContent = "n/a"));
-        }
-
-        // Histograms
-        drawHistogram(q("histNpv"), finiteNpv, 18, `NPV distribution (${focus.treatmentName})`);
-        drawHistogram(q("histBcr"), finiteBcr, 18, `BCR distribution (${focus.treatmentName})`);
-
-        if (status) status.textContent = `Simulation complete for: ${focus.treatmentName}.`;
-        toast("Simulation complete. Results are for the best-ranked treatment (base case) to support exploration.", "info", 5000);
-      } catch (e) {
-        console.error(e);
-        const status = q("simStatus");
-        if (status) status.textContent = "Simulation failed.";
-        toast("Simulation failed. Check inputs and try again.", "error", 6000);
+    for (let i = 0; i < N; i++) {
+      // Perturb outputs
+      if (varyOutputs) {
+        model.outputs.forEach((o, j) => {
+          const u = (rand() * 2 - 1) * varPct;
+          o.value = baseOutputValues[j] * (1 + u);
+        });
       }
+
+      // Perturb costs
+      if (varyCosts) {
+        model.treatments.forEach((t, j) => {
+          const u1 = (rand() * 2 - 1) * varPct;
+          const u2 = (rand() * 2 - 1) * varPct;
+          const u3 = (rand() * 2 - 1) * varPct;
+          const u4 = (rand() * 2 - 1) * varPct;
+          t.labourCost = baseTreatCosts[j].labourCost * (1 + u1);
+          t.materialsCost = baseTreatCosts[j].materialsCost * (1 + u2);
+          t.servicesCost = baseTreatCosts[j].servicesCost * (1 + u3);
+          t.capitalCost = baseTreatCosts[j].capitalCost * (1 + u4);
+        });
+      }
+
+      const comp = computeComparison({ rate, years, adoptMul, risk });
+      const nonCtrl = comp.rows.filter(r => !r.isControl);
+
+      // Best by ΔNPV
+      let best = null;
+      nonCtrl.forEach(r => {
+        if (!best || (isFinite(r.inc.npv) && r.inc.npv > best.inc.npv)) best = r;
+      });
+      if (best) bestCount.set(best.id, bestCount.get(best.id) + 1);
+
+      // Moments
+      comp.rows.forEach(r => {
+        const d = r.isControl ? 0 : (r.inc.npv || 0);
+        deltaNpvSums.set(r.id, deltaNpvSums.get(r.id) + d);
+        deltaNpvSums2.set(r.id, deltaNpvSums2.get(r.id) + d * d);
+        const bcr = r.isControl ? 0 : r.inc.bcr;
+        if (isFinite(bcr) && bcr > 1) bcrAbove1.set(r.id, bcrAbove1.get(r.id) + 1);
+      });
+    }
+
+    // Restore originals
+    model.outputs.forEach((o, j) => (o.value = baseOutputValues[j]));
+    model.treatments.forEach((t, j) => {
+      t.labourCost = baseTreatCosts[j].labourCost;
+      t.materialsCost = baseTreatCosts[j].materialsCost;
+      t.servicesCost = baseTreatCosts[j].servicesCost;
+      t.capitalCost = baseTreatCosts[j].capitalCost;
+    });
+
+    const summary = treatments.map(r => {
+      const mean = deltaNpvSums.get(r.id) / N;
+      const m2 = deltaNpvSums2.get(r.id) / N;
+      const sd = Math.sqrt(Math.max(m2 - mean * mean, 0));
+      return {
+        treatment: r.name,
+        is_control: r.isControl ? "Yes" : "No",
+        prob_best_by_delta_npv: r.isControl ? 0 : bestCount.get(r.id) / N,
+        mean_delta_npv: r.isControl ? 0 : mean,
+        sd_delta_npv: r.isControl ? 0 : sd,
+        prob_delta_bcr_gt_1: r.isControl ? 0 : bcrAbove1.get(r.id) / N
+      };
+    });
+
+    // Render table
+    const rowsHtml = summary
+      .map(s => `
+        <tr>
+          <td>${esc(s.treatment)}</td>
+          <td>${esc(s.is_control)}</td>
+          <td>${isFinite(s.prob_best_by_delta_npv) ? pct(s.prob_best_by_delta_npv * 100) : "n/a"}</td>
+          <td>${money(s.mean_delta_npv)}</td>
+          <td>${money(s.sd_delta_npv)}</td>
+          <td>${isFinite(s.prob_delta_bcr_gt_1) ? pct(s.prob_delta_bcr_gt_1 * 100) : "n/a"}</td>
+        </tr>
+      `).join("");
+
+    setHTML(
+      host,
+      `
+      <div class="tool2-help tool2-small">
+        Simulation varies unit values and/or costs by ±${fmt(varPct * 100)}% to explore uncertainty.
+        It reports the probability a treatment is best by ΔNPV vs control, and how often ΔBCR exceeds 1 (interpret as guidance, not a rule).
+      </div>
+      <div class="tool2-table-wrap">
+        <table class="tool2-compare" style="min-width:1100px">
+          <thead>
+            <tr>
+              <th>Treatment</th>
+              <th>Control</th>
+              <th>Pr(best by ΔNPV)</th>
+              <th>Mean ΔNPV</th>
+              <th>SD ΔNPV</th>
+              <th>Pr(ΔBCR &gt; 1)</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="tool2-actions no-print">
+        <button id="tool2ExportSimExcel" type="button">Export simulation summary (Excel)</button>
+      </div>
+      `
+    );
+
+    const btn = $("#tool2ExportSimExcel");
+    if (btn) {
+      btn.onclick = () => {
+        if (hasXLSX()) {
+          const XLSX = window.XLSX;
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Simulation_Summary");
+          const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+          const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `${slug(model.project.name)}_simulation.xlsx`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            URL.revokeObjectURL(a.href);
+            a.remove();
+          }, 0);
+          showToast("Simulation exported (Excel).");
+        } else {
+          downloadFile(`${slug(model.project.name)}_simulation.csv`, jsonToCSV(summary), "text/csv");
+          showToast("XLSX library not found. Exported CSV instead.");
+        }
+      };
+    }
+
+    showToast("Simulation complete.");
+  }
+
+  function bindSimButton() {
+    document.addEventListener("click", e => {
+      const el = e.target.closest("#runSim, [data-action='run-sim']");
+      if (!el) return;
+      e.preventDefault();
+      runSimulation();
     });
   }
 
-  /********************************************************************
-   * Rerender all
-   ********************************************************************/
-  function rerenderAll() {
-    renderOutputs(STATE);
-    renderTreatments(STATE);
-    renderBenefits(STATE);
-    renderCosts(STATE);
-    renderDatabaseTab(STATE);
-
-    // Keep results controls in sync
-    bindResultsControls();
+  // -----------------------------
+  // INITIALISE
+  // -----------------------------
+  function renderAll() {
+    injectTool2CSS();
+    renderOutputs();
+    renderTreatments();
+    renderResultsComparison();
   }
 
-  /********************************************************************
-   * Wire toolbar buttons
-   ********************************************************************/
-  function wireToolbarButtons() {
-    q("addOutput")?.addEventListener("click", addOutput);
-    q("addTreatment")?.addEventListener("click", addTreatment);
-    q("addBenefit")?.addEventListener("click", addBenefit);
-    q("addCost")?.addEventListener("click", addCost);
-  }
+  function bindCoreButtons() {
+    // PDF export buttons if present
+    const exportPdfBtn = $("#exportPdf") || $("#exportPdfFoot");
+    if (exportPdfBtn) exportPdfBtn.addEventListener("click", e => { e.preventDefault(); window.print(); });
 
-  /********************************************************************
-   * Initialise
-   ********************************************************************/
-  function init() {
-    setLoading(true, "Loading scenario and interface");
+    // CSV export (fallback if your existing UI expects it)
+    const exportCsvBtn = $("#exportCsv") || $("#exportCsvFoot");
+    if (exportCsvBtn) exportCsvBtn.addEventListener("click", e => {
+      e.preventDefault();
+      const comp = computeComparison({
+        rate: Number($("#discBase")?.value ?? model.time.discBase) || model.time.discBase,
+        years: Number($("#years")?.value ?? model.time.years) || model.time.years,
+        adoptMul: Number($("#adoptBase")?.value ?? model.adoption.base) ?? model.adoption.base,
+        risk: Number($("#riskBase")?.value ?? model.risk.base) ?? model.risk.base
+      });
+      const rows = comp.rows.map(r => ({
+        treatment: r.name,
+        is_control: r.isControl,
+        rank: r.isControl ? 1 : r.rank,
+        delta_npv: r.isControl ? 0 : r.inc.npv,
+        delta_pv_benefits: r.isControl ? 0 : r.inc.pvBenefits,
+        delta_pv_costs: r.isControl ? 0 : r.inc.pvCosts,
+        delta_bcr: r.isControl ? 0 : r.inc.bcr,
+        delta_roi_pct: r.isControl ? 0 : r.inc.roi
+      }));
+      downloadFile(`${slug(model.project.name)}_results.csv`, jsonToCSV(rows), "text/csv");
+      showToast("Results exported (CSV).");
+    });
 
-    // Tabs
-    wireTabs();
-
-    // Toolbar
-    wireToolbarButtons();
-
-    // Save/load JSON
-    bindProjectSaveLoad();
-
-    // Bind forms
-    bindProjectFields();
-    bindSettingsFields();
-    bindResultsControls();
-
-    // Excel workflow
-    bindExcelWorkflow();
-
-    // AI tab
-    bindAiTab();
-
-    // Simulation
-    bindSimulation();
-
-    // Initial render
-    rerenderAll();
-
-    // Results controls sync
-    const rm = q("rankMetric");
-    if (rm) rm.value = STATE.ui.rankMetric || "bcr";
-    const vm = q("resultsViewMode");
-    if (vm) vm.value = STATE.ui.resultsViewMode || "absolute";
-    const cp = q("columnsPerPage");
-    if (cp) cp.value = String(STATE.ui.columnsPerPage || 6);
-    const sd = q("showDeltas");
-    if (sd) sd.value = String(Boolean(STATE.ui.showDeltas));
-
-    // Active tab
-    setActiveTab(STATE.ui.activeTab || "intro");
-
-    // First calc
-    recalcAndRender(false);
-
-    // Hide loader
-    setTimeout(() => setLoading(false), 250);
-
-    // Accessibility: enter key on tablist
-    const tablist = document.querySelector(".tabs-nav");
-    if (tablist) {
-      tablist.addEventListener("keydown", (e) => {
-        if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
-        const tabs = Array.from(document.querySelectorAll(".tab-link"));
-        const idx = tabs.findIndex((t) => t.classList.contains("active"));
-        if (idx < 0) return;
-        const next = e.key === "ArrowRight" ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
-        tabs[next].focus();
-        setActiveTab(tabs[next].getAttribute("data-tab"));
+    // Save/load JSON if you keep those buttons
+    const saveProjectBtn = $("#saveProject");
+    if (saveProjectBtn) {
+      saveProjectBtn.addEventListener("click", e => {
         e.preventDefault();
+        downloadFile(`${slug(model.project.name)}.json`, JSON.stringify(model, null, 2), "application/json");
+        showToast("Project JSON downloaded.");
+      });
+    }
+
+    const loadFileInput = $("#loadFile");
+    const loadProjectBtn = $("#loadProject");
+    if (loadProjectBtn && loadFileInput) {
+      loadProjectBtn.addEventListener("click", e => {
+        e.preventDefault();
+        loadFileInput.click();
+      });
+      loadFileInput.addEventListener("change", async e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        try {
+          const obj = JSON.parse(text);
+          Object.assign(model, obj);
+          if (!model.toolName) model.toolName = TOOL_NAME;
+          if (!model.time?.discountSchedule) model.time.discountSchedule = JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_SCHEDULE));
+          ensureTreatmentDeltas();
+          saveModel();
+          setBasicsFieldsFromModel();
+          renderAll();
+          showToast("Project JSON loaded.");
+        } catch (err) {
+          alert("Invalid JSON file.");
+          console.error(err);
+        } finally {
+          e.target.value = "";
+        }
       });
     }
   }
 
-  // Boot
-  window.addEventListener("DOMContentLoaded", init);
+  function ensureToolNameInUI() {
+    const titleEls = ["#toolTitle", "#appTitle", "h1[data-app-title]"].map(s => $(s)).filter(Boolean);
+    titleEls.forEach(el => (el.textContent = TOOL_NAME));
+    document.title = TOOL_NAME;
+  }
+
+  // -----------------------------
+  // BOOT
+  // -----------------------------
+  function boot() {
+    injectTool2CSS();
+    bindTooltips();
+    ensureToolNameInUI();
+
+    const loaded = loadModel();
+    if (!loaded) {
+      seedDefaultTreatmentsIfNeeded();
+      ensureTreatmentDeltas();
+      saveModel();
+    } else {
+      // If a user loaded old data without many treatments, still seed fallback.
+      seedDefaultTreatmentsIfNeeded();
+      ensureTreatmentDeltas();
+      saveModel();
+    }
+
+    setBasicsFieldsFromModel();
+    initTabs();
+    bindLiveInputs();
+    bindExcelButtons();
+    bindSimButton();
+    bindCoreButtons();
+
+    // Render
+    renderAll();
+
+    // Wire any start button
+    const startBtn = $("#startBtn");
+    if (startBtn) {
+      startBtn.addEventListener("click", e => {
+        e.preventDefault();
+        switchTab("project");
+        showToast("Welcome. Start with the Project tab, then upload your Excel template.");
+      });
+    }
+
+    showToast(`${TOOL_NAME} ready. Upload Excel to set your default dataset.`);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
 })();
