@@ -1,464 +1,771 @@
-<!DOCTYPE html>
+<!-- index.html -->
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Farming CBA Decision Tool 2</title>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Farming CBA Decision Tool 2</title>
+
   <link rel="stylesheet" href="styles.css" />
-  <!-- XLSX for Excel/CSV import & export -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
+
 <body>
-  <div class="app-shell">
-    <header class="app-header">
-      <div class="app-title-block">
-        <h1>Farming CBA Decision Tool 2</h1>
-        <p class="app-subtitle">
-          Snapshot-first, Excel-first cost–benefit analysis using the Lockhart field trial dataset.
-        </p>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="app-header" role="banner">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">F</div>
+        <div class="brand-text">
+          <div class="app-title">Farming CBA Decision Tool 2</div>
+          <div class="app-subtitle">Cost–benefit comparison of treatments against a control, with simulations and policy brief outputs</div>
+        </div>
       </div>
-      <div class="app-badge">CBA</div>
-    </header>
 
-    <nav class="tabs">
-      <button class="tab-button active" data-tab="tab-intro">1. Introduction</button>
-      <button class="tab-button" data-tab="tab-data">2. Data &amp; treatments</button>
-      <button class="tab-button" data-tab="tab-additional">3. Additional benefits &amp; costs</button>
-      <button class="tab-button" data-tab="tab-results">4. Results matrix</button>
-      <button class="tab-button" data-tab="tab-sim">5. Scenario simulations</button>
-      <button class="tab-button" data-tab="tab-ai">6. AI helper prompt</button>
-      <button class="tab-button" data-tab="tab-export">7. Export &amp; print</button>
-    </nav>
+      <div class="header-actions" role="group" aria-label="Header actions">
+        <button id="btnA11yText" class="btn btn-ghost" type="button"
+          data-tooltip="Increase text size for easier reading">
+          Aa+
+        </button>
+        <button id="btnA11yContrast" class="btn btn-ghost" type="button"
+          data-tooltip="Toggle high contrast">
+          Contrast
+        </button>
+        <button id="btnPrint" class="btn btn-ghost" type="button"
+          data-tooltip="Print a clean report view">
+          Print
+        </button>
+        <button id="btnResetAll" class="btn btn-danger" type="button"
+          data-tooltip="Reset the tool to a clean state (clears loaded data and settings)">
+          Reset
+        </button>
+      </div>
+    </div>
 
-    <main class="tab-container">
-      <!-- TAB 1: INTRO -->
-      <section id="tab-intro" class="tab-pane active">
-        <div class="card">
-          <h2>What the Farming CBA Decision Tool 2 does</h2>
-          <p>
-            This decision aid turns the Lockhart field trial dataset into a simple but robust
-            cost–benefit analysis, comparing each soil amendment against the control. It keeps the
-            workflow Excel-first: you upload the original dataset (no reformatting), the tool
-            aggregates by amendment, and the results matrix shows NPV, PV benefits, PV costs,
-            benefit–cost ratio, ROI and ranking.
-          </p>
+    <div class="header-status">
+      <div class="status-left">
+        <span class="badge" id="appVersionBadge" aria-label="Version badge">v2</span>
+        <span class="muted" id="statusText">Ready.</span>
+      </div>
+      <div class="status-right">
+        <span class="muted">Time zone: Africa/Addis_Ababa</span>
+      </div>
+    </div>
+  </header>
 
-          <div class="intro-grid">
-            <div>
-              <h3>Workflow at a glance</h3>
-              <ol class="steps-list">
-                <li><strong>Upload data:</strong> Load the Lockhart dataset exactly as provided
-                    (<code>.xlsx</code> or <code>.csv</code>).</li>
-                <li><strong>Check treatments:</strong> The tool aggregates all plots by
-                    <em>Amendment</em> and estimates average yield and yearly treatment costs per
-                    hectare. You can adjust these and set capital costs.</li>
-                <li><strong>Review additional variables:</strong> Inspect extra agronomic indicators
-                    (biomass, plants per m², protein, etc.) and cost components (labour, machinery,
-                    transport) by treatment.</li>
-                <li><strong>Read the results matrix:</strong> See NPV, PV benefits, PV costs, BCR,
-                    ROI and ranking, with the control shown side by side for direct comparison.</li>
-                <li><strong>Stress-test scenarios:</strong> Use simple worst/base/best simulations
-                    with different grain prices and cost multipliers.</li>
-                <li><strong>Ask an AI:</strong> Copy a ready-made prompt containing a JSON summary of
-                    the results into Copilot, ChatGPT or similar to generate a detailed narrative
-                    and tables.</li>
-                <li><strong>Export:</strong> Export the results matrix to Excel or print to PDF for
-                    reports and decision meetings.</li>
+  <main id="main" class="app-main" role="main">
+    <section class="tabs-shell" aria-label="Application tabs">
+      <div class="tabs-bar" role="tablist" aria-label="Sections">
+        <button class="tab-btn is-active" id="tabBtnIntro" role="tab" aria-selected="true" aria-controls="tabIntro" data-tab="intro" type="button">Introduction</button>
+        <button class="tab-btn" id="tabBtnData" role="tab" aria-selected="false" aria-controls="tabData" data-tab="data" type="button">Data</button>
+        <button class="tab-btn" id="tabBtnAssumptions" role="tab" aria-selected="false" aria-controls="tabAssumptions" data-tab="assumptions" type="button">Assumptions</button>
+        <button class="tab-btn" id="tabBtnBenefits" role="tab" aria-selected="false" aria-controls="tabBenefits" data-tab="benefits" type="button">Additional benefits</button>
+        <button class="tab-btn" id="tabBtnCosts" role="tab" aria-selected="false" aria-controls="tabCosts" data-tab="costs" type="button">Additional costs</button>
+        <button class="tab-btn" id="tabBtnSim" role="tab" aria-selected="false" aria-controls="tabSim" data-tab="sim" type="button">Simulations</button>
+        <button class="tab-btn" id="tabBtnResults" role="tab" aria-selected="false" aria-controls="tabResults" data-tab="results" type="button">Results</button>
+        <button class="tab-btn" id="tabBtnCopilot" role="tab" aria-selected="false" aria-controls="tabCopilot" data-tab="copilot" type="button">Copilot / AI brief</button>
+        <button class="tab-btn" id="tabBtnHelp" role="tab" aria-selected="false" aria-controls="tabHelp" data-tab="help" type="button">Help</button>
+      </div>
+
+      <div class="tabs-panels">
+        <!-- INTRODUCTION -->
+        <section id="tabIntro" class="tab-panel is-active" role="tabpanel" aria-labelledby="tabBtnIntro" tabindex="0">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">What this tool does</h2>
+                <p class="card-subtitle">For farmers, policy makers, and researchers: consistent, transparent comparison of treatments against a control.</p>
+              </div>
+              <div class="card-body prose">
+                <p>
+                  Load your dataset (the same template you already use). The tool calculates present values using your selected discount rate and
+                  time horizon, then compares every treatment side-by-side with the control.
+                </p>
+                <p>
+                  You can also add extra benefits and costs that are not in the dataset (for example, extra labour time, machinery wear, co-benefits,
+                  avoided losses, or environmental co-benefits) and see how results change.
+                </p>
+                <p>
+                  The simulations section lets you test uncertainty (for example, yield response, price, and cost shocks), producing ranges and
+                  probability-style summaries.
+                </p>
+              </div>
+
+              <div class="card-footer">
+                <button id="btnGoData" class="btn btn-primary" type="button">Load data</button>
+                <button id="btnGoResults" class="btn btn-ghost" type="button">Go to results</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Quick glossary</h2>
+                <p class="card-subtitle">Tooltips appear throughout. Hover or focus on ⓘ labels.</p>
+              </div>
+              <div class="card-body">
+                <dl class="glossary">
+                  <div class="glossary-row">
+                    <dt>PV benefits</dt>
+                    <dd>Discounted value of benefits over time.</dd>
+                  </div>
+                  <div class="glossary-row">
+                    <dt>PV costs</dt>
+                    <dd>Discounted value of costs over time.</dd>
+                  </div>
+                  <div class="glossary-row">
+                    <dt>NPV</dt>
+                    <dd>PV benefits minus PV costs.</dd>
+                  </div>
+                  <div class="glossary-row">
+                    <dt>BCR</dt>
+                    <dd>PV benefits divided by PV costs.</dd>
+                  </div>
+                  <div class="glossary-row">
+                    <dt>ROI</dt>
+                    <dd>NPV divided by PV costs (net gain per discounted dollar spent).</dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="card-footer">
+                <div class="inline-note">
+                  <span class="dot ok" aria-hidden="true"></span>
+                  <span class="muted">Decision support only. No automatic “best choice”.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Workflow</h2>
+              <p class="card-subtitle">Excel-first, but works fully in-browser.</p>
+            </div>
+            <div class="card-body">
+              <ol class="steps">
+                <li>Load your dataset in the Data tab.</li>
+                <li>Confirm assumptions (area, horizon, discount rate, baseline prices).</li>
+                <li>Add any additional benefits and costs (optional).</li>
+                <li>Run simulations (optional) to see uncertainty ranges.</li>
+                <li>Export results to Excel and generate an AI-ready policy brief pack.</li>
               </ol>
             </div>
-            <div>
-              <h3>Key assumptions</h3>
-              <ul class="steps-list">
-                <li>Treatments are defined by the <strong>Amendment</strong> column.</li>
-                <li>Average <strong>Yield t/ha</strong> is used as the yield for each treatment.</li>
-                <li><strong>Treatment Input Cost Only /Ha</strong> is treated as the annual
-                    treatment cost per hectare.</li>
-                <li>The control is used as the baseline. PV benefits are the discounted value of
-                    extra yield revenue versus the control. PV costs are the discounted treatment
-                    costs plus any capital cost you enter.</li>
-                <li>You can override yields, costs, capital cost, and control choice to test
-                    scenarios or calibration assumptions.</li>
-              </ul>
+          </div>
+        </section>
+
+        <!-- DATA -->
+        <section id="tabData" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnData" tabindex="0">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Upload your dataset</h2>
+                <p class="card-subtitle">Accepted: .xlsx, .xls, .csv. Uses your existing template with no edits.</p>
+              </div>
+              <div class="card-body">
+                <div class="form-row">
+                  <label class="label" for="fileInput">
+                    File
+                    <span class="hint" data-tooltip="Upload the same file you use as your template. The tool reads it directly.">ⓘ</span>
+                  </label>
+                  <input id="fileInput" class="input" type="file" accept=".xlsx,.xls,.csv" />
+                </div>
+
+                <div class="form-row">
+                  <label class="label" for="sheetSelect">
+                    Sheet (if Excel)
+                    <span class="hint" data-tooltip="If your workbook has multiple sheets, choose the one with the treatment data.">ⓘ</span>
+                  </label>
+                  <select id="sheetSelect" class="select" disabled>
+                    <option value="">(auto)</option>
+                  </select>
+                </div>
+
+                <div class="form-actions">
+                  <button id="btnParseFile" class="btn btn-primary" type="button">Read file</button>
+                  <button id="btnClearFile" class="btn btn-ghost" type="button">Clear</button>
+                </div>
+
+                <div class="alert alert-info" id="dataRequirementsBox" role="note">
+                  <div class="alert-title">Tip</div>
+                  <div class="alert-body">
+                    After loading, the tool shows a preview and a “field mapping” status. If anything is missing, the tool will flag it explicitly.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Data status</h2>
+                <p class="card-subtitle">What the tool detected from the uploaded file.</p>
+              </div>
+              <div class="card-body">
+                <div class="kv">
+                  <div class="kv-row"><div class="kv-k">Rows</div><div class="kv-v" id="dataRowCount">—</div></div>
+                  <div class="kv-row"><div class="kv-k">Treatments detected</div><div class="kv-v" id="dataTreatmentCount">—</div></div>
+                  <div class="kv-row"><div class="kv-k">Control detected</div><div class="kv-v" id="dataControlStatus">—</div></div>
+                  <div class="kv-row"><div class="kv-k">Years detected</div><div class="kv-v" id="dataYearSpan">—</div></div>
+                </div>
+                <div class="divider"></div>
+                <div id="mappingStatus" class="mapping-status" aria-live="polite"></div>
+              </div>
+              <div class="card-footer">
+                <button id="btnValidateAndContinue" class="btn btn-primary" type="button">Validate and continue</button>
+                <button id="btnDownloadResultsTemplate" class="btn btn-ghost" type="button" data-tooltip="Optional: downloads a results workbook after your data is loaded.">Download results workbook</button>
+              </div>
             </div>
           </div>
 
-          <div class="info-callout">
-            <h3>Decision support, not decision rules</h3>
-            <p>
-              The tool is designed for decision support. It does not recommend a single best
-              treatment or apply fixed thresholds. Instead it shows which options look stronger or
-              weaker economically, why, and how changes in price, costs or agronomy could shift
-              results.
-            </p>
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Preview</h2>
+              <p class="card-subtitle">First rows of the detected dataset (read-only).</p>
+            </div>
+            <div class="card-body">
+              <div class="table-wrap" role="region" aria-label="Data preview table" tabindex="0">
+                <table class="table" id="dataPreviewTable">
+                  <thead id="dataPreviewThead"></thead>
+                  <tbody id="dataPreviewTbody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- TAB 2: DATA & TREATMENTS -->
-      <section id="tab-data" class="tab-pane">
-        <div class="card">
-          <h2>Step 1: Upload Lockhart data</h2>
-          <p>
-            Upload the original Lockhart field trial dataset
-            (<code>.xlsx</code> or <code>.csv</code>) exactly as it is. The tool will automatically
-            locate the header row and read at least:
-            <strong>Amendment</strong>,
-            <strong>Yield t/ha</strong>, and
-            <strong>Treatment Input Cost Only /Ha</strong>.
-            All other numeric columns (labour, machinery, transport, biomass, etc.) are also read
-            and can be viewed in the <strong>Additional benefits &amp; costs</strong> tab.
-          </p>
+        <!-- ASSUMPTIONS -->
+        <section id="tabAssumptions" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnAssumptions" tabindex="0">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Core assumptions</h2>
+                <p class="card-subtitle">These drive discounting and scaling.</p>
+              </div>
+              <div class="card-body">
+                <div class="form-grid">
+                  <div class="form-row">
+                    <label class="label" for="inpArea">
+                      Farm area (ha)
+                      <span class="hint" data-tooltip="Used to scale per-hectare entries into whole-farm totals.">ⓘ</span>
+                    </label>
+                    <input id="inpArea" class="input" type="number" min="0" step="0.01" value="100" />
+                  </div>
 
-          <div class="upload-row">
-            <label for="file-input" class="upload-label">
-              Data file (Lockhart field trial)
-            </label>
-            <input
-              id="file-input"
-              type="file"
-              accept=".xlsx,.xls,.csv"
-            />
+                  <div class="form-row">
+                    <label class="label" for="inpHorizon">
+                      Time horizon (years)
+                      <span class="hint" data-tooltip="How many years to include in present value calculations.">ⓘ</span>
+                    </label>
+                    <input id="inpHorizon" class="input" type="number" min="1" step="1" value="10" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="inpDiscount">
+                      Discount rate (%)
+                      <span class="hint" data-tooltip="Used to discount future benefits and costs into today’s dollars.">ⓘ</span>
+                    </label>
+                    <input id="inpDiscount" class="input" type="number" min="0" step="0.01" value="7" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="inpDefaultPrice">
+                      Default grain price ($/t)
+                      <span class="hint" data-tooltip="Used when a price is missing for any year/treatment and you choose to fill with default.">ⓘ</span>
+                    </label>
+                    <input id="inpDefaultPrice" class="input" type="number" min="0" step="0.01" value="450" />
+                  </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="form-row">
+                  <label class="label" for="selMissingPolicy">
+                    Missing values handling
+                    <span class="hint" data-tooltip="Choose how the tool treats missing numbers in the dataset.">ⓘ</span>
+                  </label>
+                  <select id="selMissingPolicy" class="select">
+                    <option value="flag">Flag and stop</option>
+                    <option value="zero">Assume zero (and log)</option>
+                    <option value="default_price">Fill missing price with default (and log)</option>
+                  </select>
+                </div>
+
+                <div class="form-actions">
+                  <button id="btnSaveAssumptions" class="btn btn-primary" type="button">Save assumptions</button>
+                  <button id="btnRecalc" class="btn btn-ghost" type="button">Recalculate results</button>
+                </div>
+
+                <div class="callout" id="assumptionsNotes" aria-live="polite"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Scenario manager</h2>
+                <p class="card-subtitle">Save multiple assumption sets (for sensitivity checks).</p>
+              </div>
+              <div class="card-body">
+                <div class="form-row">
+                  <label class="label" for="scenarioName">Scenario name</label>
+                  <input id="scenarioName" class="input" type="text" placeholder="e.g., Base case, Low price, High costs" />
+                </div>
+
+                <div class="form-actions">
+                  <button id="btnScenarioSave" class="btn btn-primary" type="button">Save scenario</button>
+                  <button id="btnScenarioNew" class="btn btn-ghost" type="button">New blank</button>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="form-row">
+                  <label class="label" for="scenarioSelect">Saved scenarios</label>
+                  <select id="scenarioSelect" class="select"></select>
+                </div>
+
+                <div class="form-actions">
+                  <button id="btnScenarioLoad" class="btn btn-ghost" type="button">Load</button>
+                  <button id="btnScenarioDelete" class="btn btn-danger" type="button">Delete</button>
+                </div>
+
+                <div class="alert alert-warn">
+                  <div class="alert-title">Note</div>
+                  <div class="alert-body">
+                    Scenarios are stored locally in your browser (no upload to any server).
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <p id="file-status" class="text-muted">
-            No file loaded yet. Please upload the Lockhart dataset.
-          </p>
+        </section>
 
-          <hr class="section-divider" />
+        <!-- ADDITIONAL BENEFITS -->
+        <section id="tabBenefits" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnBenefits" tabindex="0">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Additional benefits (optional)</h2>
+              <p class="card-subtitle">Add benefits not already captured in the dataset (e.g., avoided losses, co-benefits, risk reduction).</p>
+            </div>
+            <div class="card-body">
+              <div class="toolbar">
+                <button id="btnAddBenefitRow" class="btn btn-primary" type="button">Add benefit</button>
+                <button id="btnClearBenefits" class="btn btn-ghost" type="button">Clear benefits</button>
+                <span class="spacer"></span>
+                <button id="btnBenefitsApply" class="btn btn-ghost" type="button" data-tooltip="Applies benefit adjustments to results without changing your source dataset.">Apply to results</button>
+              </div>
 
-          <h2>Step 2: Check and adjust treatments</h2>
-          <p>
-            Once the file is loaded, the table below shows one row per amendment (treatment),
-            with average yield and cost per hectare. You can edit these values or add a capital
-            cost per hectare in year 0 to stress-test different scenarios. One treatment is
-            marked as the <strong>control</strong>; by default this is any amendment whose name
-            contains “control”, otherwise the first treatment in the list.
-          </p>
+              <div class="table-wrap" role="region" aria-label="Additional benefits table" tabindex="0">
+                <table class="table" id="benefitsTable">
+                  <thead>
+                    <tr>
+                      <th>Description</th>
+                      <th>Applies to</th>
+                      <th>Year</th>
+                      <th>Amount ($)</th>
+                      <th>Notes</th>
+                      <th class="col-actions">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="benefitsTbody"></tbody>
+                </table>
+              </div>
 
-          <p id="treatments-no-data" class="text-muted">
-            Treatments will appear here after you load the dataset.
-          </p>
-
-          <div class="table-wrapper">
-            <table class="data-table" id="treatments-table">
-              <thead>
-                <tr>
-                  <th>Treatment (Amendment)</th>
-                  <th>Yield (t/ha)</th>
-                  <th>
-                    Capital cost ($/ha, year 0)
-                    <span class="tooltip">
-                      <span class="tooltip-icon">?</span>
-                      <span class="tooltip-text">
-                        One-off investment per hectare at year 0 for this treatment.
-                      </span>
-                    </span>
-                  </th>
-                  <th>
-                    Annual treatment cost ($/ha)
-                    <span class="tooltip">
-                      <span class="tooltip-icon">?</span>
-                      <span class="tooltip-text">
-                        Average yearly cost per hectare of treatment inputs (for example,
-                        amendments, herbicides, labour).
-                      </span>
-                    </span>
-                  </th>
-                  <th>Control?</th>
-                </tr>
-              </thead>
-              <tbody id="treatments-table-body">
-                <!-- Filled by app.js -->
-              </tbody>
-            </table>
+              <div class="muted small">
+                Amounts are treated as whole-farm dollars unless your dataset indicates per-hectare entries and you choose to scale.
+                Use Notes for auditability (important for policy briefs and peer review).
+              </div>
+            </div>
           </div>
+        </section>
 
-          <p class="text-muted">
-            Any changes here immediately update the CBA results, simulations and AI prompt.
-          </p>
-        </div>
-      </section>
+        <!-- ADDITIONAL COSTS -->
+        <section id="tabCosts" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnCosts" tabindex="0">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Additional costs (optional)</h2>
+              <p class="card-subtitle">Add costs not already captured (e.g., labour time, machinery, compliance, training, monitoring).</p>
+            </div>
+            <div class="card-body">
+              <div class="toolbar">
+                <button id="btnAddCostRow" class="btn btn-primary" type="button">Add cost</button>
+                <button id="btnClearCosts" class="btn btn-ghost" type="button">Clear costs</button>
+                <span class="spacer"></span>
+                <button id="btnCostsApply" class="btn btn-ghost" type="button" data-tooltip="Applies cost adjustments to results without changing your source dataset.">Apply to results</button>
+              </div>
 
-      <!-- TAB 3: ADDITIONAL BENEFITS & COSTS -->
-      <section id="tab-additional" class="tab-pane">
-        <div class="card">
-          <h2>Step 3: Additional benefits and cost components</h2>
-          <p>
-            All numeric variables in the dataset, beyond yield and the treatment input cost, are
-            summarised here by treatment. This helps interpret why some treatments perform better
-            or worse, and to see how labour, machinery and other components vary.
-          </p>
+              <div class="table-wrap" role="region" aria-label="Additional costs table" tabindex="0">
+                <table class="table" id="costsTable">
+                  <thead>
+                    <tr>
+                      <th>Description</th>
+                      <th>Applies to</th>
+                      <th>Year</th>
+                      <th>Amount ($)</th>
+                      <th>Notes</th>
+                      <th class="col-actions">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="costsTbody"></tbody>
+                </table>
+              </div>
 
-          <p id="additional-empty" class="text-muted">
-            Upload the Lockhart dataset to see additional variables by treatment.
-          </p>
+              <div class="muted small">
+                Costs entered here are added on top of dataset costs. Use Notes to keep an audit trail.
+              </div>
+            </div>
+          </div>
+        </section>
 
-          <div id="additional-benefits-wrapper" style="display:none;">
-            <h3>Additional agronomic indicators (potential benefits)</h3>
-            <p class="text-muted">
-              These variables often relate to plant performance, biomass or field conditions. They
-              are averaged across plots within each treatment.
-            </p>
-            <div class="table-wrapper">
-              <table class="data-table" id="additional-benefits-table"></table>
+        <!-- SIMULATIONS -->
+        <section id="tabSim" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnSim" tabindex="0">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Simulation settings</h2>
+                <p class="card-subtitle">Uncertainty checks for yield response, prices, and costs.</p>
+              </div>
+              <div class="card-body">
+                <div class="form-grid">
+                  <div class="form-row">
+                    <label class="label" for="simIters">
+                      Iterations
+                      <span class="hint" data-tooltip="More iterations improves stability but takes longer in the browser.">ⓘ</span>
+                    </label>
+                    <input id="simIters" class="input" type="number" min="100" step="100" value="2000" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="simSeed">
+                      Random seed
+                      <span class="hint" data-tooltip="Set a seed for reproducible simulations (useful for research and reporting).">ⓘ</span>
+                    </label>
+                    <input id="simSeed" class="input" type="number" min="0" step="1" value="12345" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="simYieldSD">
+                      Yield shock (SD, %)
+                      <span class="hint" data-tooltip="Applies a multiplicative shock around the base yield benefit stream.">ⓘ</span>
+                    </label>
+                    <input id="simYieldSD" class="input" type="number" min="0" step="0.1" value="10" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="simPriceSD">
+                      Price shock (SD, %)
+                      <span class="hint" data-tooltip="Applies a multiplicative shock around prices used in benefit calculations.">ⓘ</span>
+                    </label>
+                    <input id="simPriceSD" class="input" type="number" min="0" step="0.1" value="12" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="simCostSD">
+                      Cost shock (SD, %)
+                      <span class="hint" data-tooltip="Applies a multiplicative shock around cost streams.">ⓘ</span>
+                    </label>
+                    <input id="simCostSD" class="input" type="number" min="0" step="0.1" value="8" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="label" for="simCorr">
+                      Correlation (price–yield)
+                      <span class="hint" data-tooltip="Optional correlation between price and yield shocks (research use).">ⓘ</span>
+                    </label>
+                    <input id="simCorr" class="input" type="number" min="-1" max="1" step="0.05" value="0" />
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button id="btnRunSim" class="btn btn-primary" type="button">Run simulations</button>
+                  <button id="btnClearSim" class="btn btn-ghost" type="button">Clear</button>
+                </div>
+
+                <div class="alert alert-warn">
+                  <div class="alert-title">Interpretation</div>
+                  <div class="alert-body">
+                    Simulations show ranges under uncertainty. They do not “pick a winner”; they help you see what could change if conditions differ.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Simulation outputs</h2>
+                <p class="card-subtitle">Summaries for NPV, BCR, ROI by treatment.</p>
+              </div>
+              <div class="card-body">
+                <div class="table-wrap" role="region" aria-label="Simulation summary table" tabindex="0">
+                  <table class="table" id="simSummaryTable">
+                    <thead id="simSummaryThead"></thead>
+                    <tbody id="simSummaryTbody"></tbody>
+                  </table>
+                </div>
+                <div class="divider"></div>
+                <div class="muted small" id="simNotes" aria-live="polite"></div>
+              </div>
+              <div class="card-footer">
+                <button id="btnExportSimCSV" class="btn btn-ghost" type="button">Export simulation summary (CSV)</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RESULTS -->
+        <section id="tabResults" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnResults" tabindex="0">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Results table: control vs treatments</h2>
+              <p class="card-subtitle">Indicators are rows; control and treatments are columns (clean for Word/Excel).</p>
+            </div>
+
+            <div class="card-body">
+              <div class="toolbar">
+                <button id="btnRecalcResults" class="btn btn-primary" type="button">Recalculate</button>
+                <button id="btnCopyResults" class="btn btn-ghost" type="button" data-tooltip="Copies a Word-friendly table to clipboard.">Copy table</button>
+                <button id="btnExportResultsXLSX" class="btn btn-ghost" type="button">Export Excel</button>
+                <span class="spacer"></span>
+                <button id="btnExpandAll" class="btn btn-ghost" type="button">Expand details</button>
+                <button id="btnCollapseAll" class="btn btn-ghost" type="button">Collapse details</button>
+              </div>
+
+              <div class="table-wrap" role="region" aria-label="Main results comparison table" tabindex="0">
+                <table class="table table-sticky" id="resultsTable">
+                  <thead id="resultsThead"></thead>
+                  <tbody id="resultsTbody"></tbody>
+                </table>
+              </div>
+
+              <details class="details" id="resultsDetails">
+                <summary>Show calculation log and data checks</summary>
+                <div class="details-body">
+                  <div class="grid-2">
+                    <div>
+                      <h3 class="h3">Calculation log</h3>
+                      <pre class="log" id="calcLog" aria-label="Calculation log"></pre>
+                    </div>
+                    <div>
+                      <h3 class="h3">Warnings</h3>
+                      <pre class="log warn" id="warningsLog" aria-label="Warnings log"></pre>
+                    </div>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
 
-          <div id="additional-costs-wrapper" style="display:none; margin-top:18px;">
-            <h3>Additional cost-related variables</h3>
-            <p class="text-muted">
-              These variables often relate to labour, machinery, transport or specific cost items.
-              They are averaged across plots within each treatment and can inform more detailed
-              costing.
-            </p>
-            <div class="table-wrapper">
-              <table class="data-table" id="additional-costs-table"></table>
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Ranking</h2>
+                <p class="card-subtitle">Shown as an aid to comparison, not a decision rule.</p>
+              </div>
+              <div class="card-body">
+                <div class="table-wrap" role="region" aria-label="Ranking table" tabindex="0">
+                  <table class="table" id="rankTable">
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Treatment</th>
+                        <th>NPV</th>
+                        <th>BCR</th>
+                        <th>ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rankTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Compare to control</h2>
+                <p class="card-subtitle">Differences help explain what drives performance.</p>
+              </div>
+              <div class="card-body">
+                <div class="form-row">
+                  <label class="label" for="selCompareTreatment">Treatment</label>
+                  <select id="selCompareTreatment" class="select"></select>
+                </div>
+
+                <div class="table-wrap" role="region" aria-label="Comparison to control table" tabindex="0">
+                  <table class="table" id="compareTable">
+                    <thead>
+                      <tr>
+                        <th>Indicator</th>
+                        <th>Control</th>
+                        <th>Selected treatment</th>
+                        <th>Difference</th>
+                      </tr>
+                    </thead>
+                    <tbody id="compareTbody"></tbody>
+                  </table>
+                </div>
+
+                <div class="callout" id="compareNarrative" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- COPILOT / AI BRIEF -->
+        <section id="tabCopilot" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnCopilot" tabindex="0">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">AI-ready policy brief pack</h2>
+                <p class="card-subtitle">Generates a structured prompt and tables for a full, detailed brief.</p>
+              </div>
+              <div class="card-body prose">
+                <p>
+                  This tab prepares a clean, copy-paste prompt (plus data tables) you can use in Copilot or another AI writing assistant.
+                  It includes your assumptions, results, and simulation summaries (if run), and asks for a policy brief with clear tables.
+                </p>
+                <div class="form-actions">
+                  <button id="btnBuildAIPack" class="btn btn-primary" type="button">Build brief pack</button>
+                  <button id="btnCopyAIPack" class="btn btn-ghost" type="button">Copy pack</button>
+                  <button id="btnDownloadAIPackJSON" class="btn btn-ghost" type="button">Download JSON</button>
+                </div>
+
+                <div class="alert alert-info">
+                  <div class="alert-title">Privacy</div>
+                  <div class="alert-body">Everything is generated locally in your browser. Nothing is sent anywhere by this tool.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Brief options</h2>
+                <p class="card-subtitle">Adjust the style and audience for the generated prompt.</p>
+              </div>
+              <div class="card-body">
+                <div class="form-row">
+                  <label class="label" for="aiAudience">
+                    Audience
+                    <span class="hint" data-tooltip="Farmer-facing uses plain language; policy-facing emphasises trade-offs and implementation; research-facing is more technical.">ⓘ</span>
+                  </label>
+                  <select id="aiAudience" class="select">
+                    <option value="farmer">Farmer / on-farm manager</option>
+                    <option value="policy">Policy maker</option>
+                    <option value="research">Research / technical</option>
+                  </select>
+                </div>
+
+                <div class="form-row">
+                  <label class="label" for="aiLength">Target length</label>
+                  <select id="aiLength" class="select">
+                    <option value="short">1–2 pages</option>
+                    <option value="medium" selected>2–3 pages</option>
+                    <option value="long">4–6 pages</option>
+                  </select>
+                </div>
+
+                <div class="form-row">
+                  <label class="label" for="aiIncludeTables">
+                    Include tables
+                    <span class="hint" data-tooltip="Adds Word-ready tables and a data appendix for transparency.">ⓘ</span>
+                  </label>
+                  <select id="aiIncludeTables" class="select">
+                    <option value="yes" selected>Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+
+                <div class="form-row">
+                  <label class="label" for="aiTone">Tone</label>
+                  <select id="aiTone" class="select">
+                    <option value="plain" selected>Plain and practical</option>
+                    <option value="formal">Formal policy memo</option>
+                    <option value="academic">Academic style</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div id="additional-other-wrapper" style="display:none; margin-top:18px;">
-            <h3>Other numeric variables</h3>
-            <p class="text-muted">
-              These are other numeric fields that do not clearly fall into agronomic or cost
-              categories based on their column names. They are included for completeness.
-            </p>
-            <div class="table-wrapper">
-              <table class="data-table" id="additional-other-table"></table>
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Generated pack</h2>
+              <p class="card-subtitle">Copy into Copilot, or save as JSON.</p>
+            </div>
+            <div class="card-body">
+              <label class="label" for="aiPackText">Prompt + tables (read-only)</label>
+              <textarea id="aiPackText" class="textarea" rows="18" readonly spellcheck="false"></textarea>
+
+              <div class="divider"></div>
+
+              <label class="label" for="aiTablesText">Tables only (Word-friendly)</label>
+              <textarea id="aiTablesText" class="textarea" rows="12" readonly spellcheck="false"></textarea>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- TAB 4: RESULTS MATRIX -->
-      <section id="tab-results" class="tab-pane">
-        <div class="card">
-          <h2>Step 4: Results matrix</h2>
-
-          <div class="results-config-grid">
-            <div class="field-group">
-              <label for="price-per-tonne">
-                Grain price ($ per tonne)
-                <span class="tooltip">
-                  <span class="tooltip-icon">?</span>
-                  <span class="tooltip-text">
-                    Farm-gate price per tonne of grain. This is applied to yield differences
-                    between each treatment and the control.
-                  </span>
-                </span>
-              </label>
-              <input
-                id="price-per-tonne"
-                type="number"
-                step="1"
-                min="0"
-                value="600"
-              />
+        <!-- HELP -->
+        <section id="tabHelp" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnHelp" tabindex="0">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Help and troubleshooting</h2>
+                <p class="card-subtitle">Common issues and what to check first.</p>
+              </div>
+              <div class="card-body prose">
+                <p><strong>If the tool says “control not detected”</strong>, confirm your dataset includes a control label that matches the tool’s detection rules (shown in Data → Mapping status).</p>
+                <p><strong>If results look wrong</strong>, confirm area, discount rate, horizon, and price defaults in Assumptions.</p>
+                <p><strong>If something is missing</strong>, check the warnings log in Results → Calculation log and data checks.</p>
+              </div>
             </div>
 
-            <div class="field-group">
-              <label for="discount-rate">
-                Discount rate (% per year)
-                <span class="tooltip">
-                  <span class="tooltip-icon">?</span>
-                  <span class="tooltip-text">
-                    Annual rate used to discount future benefits and costs back to year 0.
-                  </span>
-                </span>
-              </label>
-              <input
-                id="discount-rate"
-                type="number"
-                step="0.1"
-                min="0"
-                max="100"
-                value="7"
-              />
-            </div>
-
-            <div class="field-group">
-              <label for="time-horizon">
-                Time horizon (years)
-                <span class="tooltip">
-                  <span class="tooltip-icon">?</span>
-                  <span class="tooltip-text">
-                    Number of years over which costs and yield differences are projected.
-                  </span>
-                </span>
-              </label>
-              <input
-                id="time-horizon"
-                type="number"
-                step="1"
-                min="1"
-                value="10"
-              />
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Accessibility</h2>
+                <p class="card-subtitle">Designed for field use and stakeholder briefings.</p>
+              </div>
+              <div class="card-body prose">
+                <p>Keyboard navigation: Tab through controls; arrow keys switch tabs when focused on the tab bar; Enter opens sections.</p>
+                <p>High contrast and larger text controls are in the header.</p>
+                <p>Tables are scrollable with sticky headers and are copy-pasteable into Word.</p>
+              </div>
             </div>
           </div>
 
-          <p class="results-summary" id="scenario-summary">
-            Price per tonne: <span id="summary-price">600</span>,
-            discount rate: <span id="summary-discount">7</span>%,
-            time horizon: <span id="summary-horizon">10</span> years.
-          </p>
-
-          <p id="results-empty" class="text-muted">
-            Upload the Lockhart dataset in the <strong>Data &amp; treatments</strong> tab to see
-            the results matrix.
-          </p>
-
-          <div id="results-table-wrapper" class="table-wrapper" style="display:none;">
-            <table class="data-table results-table" id="results-table">
-              <!-- Filled by app.js -->
-            </table>
-          </div>
-
-          <p class="text-muted">
-            All indicators are calculated per hectare and relative to the chosen control.
-            NPV, PV benefits and PV costs are discounted using the specified rate and time horizon.
-          </p>
-        </div>
-      </section>
-
-      <!-- TAB 5: SIMULATIONS -->
-      <section id="tab-sim" class="tab-pane">
-        <div class="card">
-          <h2>Step 5: Scenario simulations</h2>
-          <p>
-            This tab runs simple worst/base/best case simulations around your current scenario.
-            You can adjust how much grain prices and treatment costs move, and the tool will show
-            the NPV for each treatment in each scenario.
-          </p>
-
-          <div class="sim-config-grid">
-            <div class="field-group">
-              <label for="sim-low-price">
-                Low price (% of base)
-                <span class="tooltip">
-                  <span class="tooltip-icon">?</span>
-                  <span class="tooltip-text">
-                    Percentage of the main grain price used in the worst-case scenario.
-                  </span>
-                </span>
-              </label>
-              <input
-                id="sim-low-price"
-                type="number"
-                step="1"
-                min="0"
-                value="80"
-              />
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Glossary (expanded)</h2>
             </div>
-
-            <div class="field-group">
-              <label for="sim-high-price">
-                High price (% of base)
-              </label>
-              <input
-                id="sim-high-price"
-                type="number"
-                step="1"
-                min="0"
-                value="120"
-              />
-            </div>
-
-            <div class="field-group">
-              <label for="sim-high-cost">
-                High cost (% of base)
-                <span class="tooltip">
-                  <span class="tooltip-icon">?</span>
-                  <span class="tooltip-text">
-                    Percentage multiplier applied to annual treatment costs in the worst-case
-                    scenario.
-                  </span>
-                </span>
-              </label>
-              <input
-                id="sim-high-cost"
-                type="number"
-                step="1"
-                min="0"
-                value="120"
-              />
-            </div>
-
-            <div class="field-group">
-              <label for="sim-low-cost">
-                Low cost (% of base)
-              </label>
-              <input
-                id="sim-low-cost"
-                type="number"
-                step="1"
-                min="0"
-                value="80"
-              />
+            <div class="card-body">
+              <div class="prose">
+                <p><strong>NPV</strong> is the net gain after accounting for all discounted costs. <strong>PV benefits</strong> and <strong>PV costs</strong> are the discounted totals over time. <strong>BCR</strong> shows benefits per dollar of discounted cost. <strong>ROI</strong> is net gain per dollar of discounted cost.</p>
+              </div>
             </div>
           </div>
+        </section>
 
-          <p id="sim-empty" class="text-muted">
-            Upload the Lockhart dataset to run simulations.
-          </p>
+      </div>
+    </section>
 
-          <div id="sim-results-wrapper" class="table-wrapper" style="display:none;">
-            <table id="sim-results-table" class="data-table"></table>
-          </div>
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div class="toast-inner">
+        <span id="toastText">—</span>
+        <button id="toastClose" class="btn btn-ghost btn-sm" type="button" aria-label="Close message">Close</button>
+      </div>
+    </div>
+  </main>
 
-          <p class="text-muted">
-            Worst-case: low price and high cost. Best-case: high price and low cost. Base case uses
-            the price and costs from the main scenario. All NPVs are per hectare.
-          </p>
-        </div>
-      </section>
+  <footer class="app-footer" role="contentinfo">
+    <div class="footer-inner">
+      <div class="muted small">
+        Built for transparent comparison of treatments against a control. Local-only processing.
+      </div>
+      <div class="footer-actions">
+        <button id="btnExportAll" class="btn btn-ghost btn-sm" type="button">Export all (Excel + JSON)</button>
+      </div>
+    </div>
+  </footer>
 
-      <!-- TAB 6: AI HELPER -->
-      <section id="tab-ai" class="tab-pane">
-        <div class="card">
-          <h2>Step 6: AI helper prompt</h2>
-          <p>
-            The text below is a ready-made prompt containing the current scenario and results in
-            JSON form. Copy and paste it into Copilot, ChatGPT or another AI assistant to generate a
-            farmer-friendly interpretation, a policy-oriented brief, and summary tables.
-          </p>
+  <!-- Libraries (optional but recommended for GitHub Pages) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-          <div class="ai-actions">
-            <button id="btn-copy-prompt" class="btn-primary">Copy prompt to clipboard</button>
-            <span id="copy-status" class="text-muted"></span>
-          </div>
-
-          <textarea id="ai-prompt" class="ai-textarea" rows="22" spellcheck="false">
-Upload your dataset and configure the scenario to generate an AI interpretation prompt.
-          </textarea>
-        </div>
-      </section>
-
-      <!-- TAB 7: EXPORT -->
-      <section id="tab-export" class="tab-pane">
-        <div class="card">
-          <h2>Step 7: Export &amp; print</h2>
-          <p>
-            Use these options to move the results into your reporting workflow.
-          </p>
-
-          <div class="export-buttons">
-            <button id="btn-export-excel" class="btn-primary">
-              Export results matrix to Excel
-            </button>
-            <button id="btn-print" class="btn-secondary">
-              Print / Save results page as PDF
-            </button>
-          </div>
-
-          <p class="text-muted">
-            The Excel export contains the same vertical results matrix you see in the
-            <strong>Results matrix</strong> tab. For a PDF, the
-            <strong>Print / Save as PDF</strong> button opens the browser’s print dialog; choose
-            “Save as PDF” to create a clean, print-ready file focused on the current tab.
-          </p>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <script src="app.js"></script>
+  <!-- Your app -->
+  <script src="app.js" defer></script>
 </body>
 </html>
