@@ -1,2690 +1,1441 @@
-// app.js
-/* Fully functional Farming CBA Decision Aid (vanilla JS + SheetJS):
-   Existing features kept and extended (not replaced):
-   - Active tabs (Import, Mapping, Assumptions, Results, Cashflows, Sensitivity, Export, Help)
-   - Robust Excel read (auto header detection + dedupe headers)
-   - Flexible mapping for treatment/yield/cost
-   - Per-treatment overrides: adoption, yield multiplier, cost multiplier, cost timing
-   - Full CBA: PV benefits, PV costs, NPV, BCR, ROI, ranking; control included in vertical table
-   - Cashflow tables + simple canvas charts
-   - Sensitivity (one-way) + XLSX export
-   - Clean Excel export (multiple sheets)
-
-   NEW (improvements):
-   - Introduction tab support (optional in HTML): renders audience-friendly overview text blocks
-   - Additional benefits/costs (adders) configurable and applied to cashflows + PV
-   - Simulations (Monte Carlo) for uncertainty on key drivers, outputs distributions + probs
-   - Copilot/AI integration tab (no external calls): builds a structured JSON prompt for policy brief + tables, copy/download
-   - Info tooltips (data-tooltip attribute): accessible hover/focus tooltips
-   - Better accessibility: keyboard navigation for tabs (arrow keys, Home/End), reduced JS hard-fail if new tab DOM not present
-
-   ASCII-only.
+/* Farming CBA Decision Tool 2 — Fully functional UI + analysis + simulations + Copilot pack
+   - Reads uploaded .xlsx (via SheetJS)
+   - Auto-detects key fields (treatment, yield, costs)
+   - Computes PV Benefits, PV Costs, NPV, BCR, ROI over user horizon & discount rate
+   - Compares all treatments against a control
+   - Supports Additional Benefits/Costs (annual or one-off, per ha or total)
+   - Monte Carlo simulations (price/yield/cost uncertainty)
+   - Exports results to Excel
+   - Generates a Copilot-ready policy brief pack (prompt + JSON + tables)
 */
 
-/* =========================
-   Embedded Lockhart sample
-   ========================= */
-const EMBEDDED_LOCKHART_ROWS = [
-  {"Plot":1,"Rep":1,"Trt":12,"Amendment":"Deep OM (CP1) + liq. Gypsum (CHT)","Practice Change":"Crop 1","Yield t/ha":7.029229293617021,"Protein":23.2,"|":17945.488764568763},
-  {"Plot":2,"Rep":1,"Trt":6,"Amendment":"Deep OM (CP1)","Practice Change":"Crop 1","Yield t/ha":6.539273035489362,"Protein":23.6,"|":24884.884058984914},
-  {"Plot":3,"Rep":1,"Trt":13,"Amendment":"Deep OM (CP1) + liq. Gypsum (CHT)+PAM","Practice Change":"Crop 1","Yield t/ha":6.54757540287234,"Protein":23.7,"|":18463.88888888889},
-  {"Plot":4,"Rep":1,"Trt":9,"Amendment":"Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.37207183687234,"Protein":24.7,"|":1012.5633802816902},
-  {"Plot":5,"Rep":1,"Trt":2,"Amendment":"Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.667165176319149,"Protein":23.9,"|":912.1951219512195},
-  {"Plot":6,"Rep":1,"Trt":11,"Amendment":"Lime+Deep OM+Gypsum CHT+PAM","Practice Change":"Crop 1","Yield t/ha":7.199593337872341,"Protein":23.3,"|":976.8292682926829},
-  {"Plot":7,"Rep":1,"Trt":5,"Amendment":"Lime +Deep OM (CP1)","Practice Change":"Crop 1","Yield t/ha":6.614808249489362,"Protein":23.4,"|":1033.6585365853657},
-  {"Plot":8,"Rep":1,"Trt":15,"Amendment":"Liquid Gypsum (CHT)+PAM","Practice Change":"Crop 1","Yield t/ha":6.958392845957447,"Protein":23.1,"|":782.9268292682927},
-  {"Plot":9,"Rep":1,"Trt":10,"Amendment":"Lime+Deep OM+Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.280082541361702,"Protein":23.7,"|":1059.349593495935},
-  {"Plot":10,"Rep":1,"Trt":4,"Amendment":"Lime + Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.839204480808511,"Protein":23.8,"|":908.9430894308944},
-  {"Plot":11,"Rep":1,"Trt":1,"Amendment":"Lime only","Practice Change":"Crop 1","Yield t/ha":7.142857142857143,"Protein":23.3,"|":790.650406504065},
-  {"Plot":12,"Rep":1,"Trt":14,"Amendment":"Liquid Gypsum (CHT)","Practice Change":"Crop 1","Yield t/ha":7.421177186276596,"Protein":23.4,"|":748.780487804878},
-  {"Plot":13,"Rep":1,"Trt":7,"Amendment":"Lime+Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.35011252212766,"Protein":23.7,"|":1024.5934959349595},
-  {"Plot":14,"Rep":1,"Trt":3,"Amendment":"Lime + Gypsum CHT+PAM","Practice Change":"Crop 1","Yield t/ha":7.35667234112766,"Protein":23.2,"|":923.1707317073171},
-  {"Plot":15,"Rep":1,"Trt":8,"Amendment":"Lime+Gypsum CHT+Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.269241385957447,"Protein":23.9,"|":1062.439024390244},
-  {"Plot":16,"Rep":1,"Trt":0,"Amendment":"Control","Practice Change":"Crop 1","Yield t/ha":7.626622926382979,"Protein":23.5,"|":694.6341463414634},
-  {"Plot":17,"Rep":2,"Trt":10,"Amendment":"Lime+Deep OM+Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":8.16927218306383,"Protein":23.5,"|":1059.349593495935},
-  {"Plot":18,"Rep":2,"Trt":14,"Amendment":"Liquid Gypsum (CHT)","Practice Change":"Crop 1","Yield t/ha":7.467401828978723,"Protein":23.3,"|":748.780487804878},
-  {"Plot":19,"Rep":2,"Trt":3,"Amendment":"Lime + Gypsum CHT+PAM","Practice Change":"Crop 1","Yield t/ha":7.751529506382978,"Protein":23.1,"|":923.1707317073171},
-  {"Plot":20,"Rep":2,"Trt":7,"Amendment":"Lime+Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.771685019574468,"Protein":23.7,"|":1024.5934959349595},
-  {"Plot":21,"Rep":2,"Trt":11,"Amendment":"Lime+Deep OM+Gypsum CHT+PAM","Practice Change":"Crop 1","Yield t/ha":7.373296617021276,"Protein":23.5,"|":976.8292682926829},
-  {"Plot":22,"Rep":2,"Trt":4,"Amendment":"Lime + Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.794740369574468,"Protein":23.4,"|":908.9430894308944},
-  {"Plot":23,"Rep":2,"Trt":1,"Amendment":"Lime only","Practice Change":"Crop 1","Yield t/ha":7.830657711489362,"Protein":23.2,"|":790.650406504065},
-  {"Plot":24,"Rep":2,"Trt":5,"Amendment":"Lime +Deep OM (CP1)","Practice Change":"Crop 1","Yield t/ha":7.082754630638297,"Protein":23.3,"|":1033.6585365853657},
-  {"Plot":25,"Rep":2,"Trt":8,"Amendment":"Lime+Gypsum CHT+Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.722016223404255,"Protein":23.6,"|":1062.439024390244},
-  {"Plot":26,"Rep":2,"Trt":2,"Amendment":"Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.417663186382979,"Protein":23.2,"|":912.1951219512195},
-  {"Plot":27,"Rep":2,"Trt":15,"Amendment":"Liquid Gypsum (CHT)+PAM","Practice Change":"Crop 1","Yield t/ha":7.268999694468085,"Protein":23.1,"|":782.9268292682927},
-  {"Plot":28,"Rep":2,"Trt":9,"Amendment":"Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.640707778085106,"Protein":23.5,"|":1012.5633802816902},
-  {"Plot":29,"Rep":2,"Trt":13,"Amendment":"Deep OM (CP1) + liq. Gypsum (CHT)+PAM","Practice Change":"Crop 1","Yield t/ha":6.601502030425532,"Protein":23.1,"|":18463.88888888889},
-  {"Plot":30,"Rep":2,"Trt":6,"Amendment":"Deep OM (CP1)","Practice Change":"Crop 1","Yield t/ha":6.842683569361702,"Protein":23.5,"|":17787.777777777777},
-  {"Plot":31,"Rep":2,"Trt":12,"Amendment":"Deep OM (CP1) + liq. Gypsum (CHT)","Practice Change":"Crop 1","Yield t/ha":7.006188607446808,"Protein":23.2,"|":17848.538011695906},
-  {"Plot":32,"Rep":2,"Trt":0,"Amendment":"Control","Practice Change":"Crop 1","Yield t/ha":7.482897900425532,"Protein":23.2,"|":694.6341463414634},
-  {"Plot":33,"Rep":3,"Trt":7,"Amendment":"Lime+Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.322008111702128,"Protein":23.4,"|":1024.5934959349595},
-  {"Plot":34,"Rep":3,"Trt":3,"Amendment":"Lime + Gypsum CHT+PAM","Practice Change":"Crop 1","Yield t/ha":7.048594062978723,"Protein":23.5,"|":923.1707317073171},
-  {"Plot":35,"Rep":3,"Trt":1,"Amendment":"Lime only","Practice Change":"Crop 1","Yield t/ha":7.468294498723404,"Protein":23.5,"|":790.650406504065},
-  {"Plot":36,"Rep":3,"Trt":14,"Amendment":"Liquid Gypsum (CHT)","Practice Change":"Crop 1","Yield t/ha":7.208078594468085,"Protein":23.5,"|":748.780487804878},
-  {"Plot":37,"Rep":3,"Trt":10,"Amendment":"Lime+Deep OM+Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.82302918893617,"Protein":23.5,"|":1059.349593495935},
-  {"Plot":38,"Rep":3,"Trt":5,"Amendment":"Lime +Deep OM (CP1)","Practice Change":"Crop 1","Yield t/ha":6.866323363404255,"Protein":23.7,"|":1033.6585365853657},
-  {"Plot":39,"Rep":3,"Trt":11,"Amendment":"Lime+Deep OM+Gypsum CHT+PAM","Practice Change":"Crop 1","Yield t/ha":7.176539666595744,"Protein":23.4,"|":976.8292682926829},
-  {"Plot":40,"Rep":3,"Trt":15,"Amendment":"Liquid Gypsum (CHT)+PAM","Practice Change":"Crop 1","Yield t/ha":7.064219107659574,"Protein":23.4,"|":782.9268292682927},
-  {"Plot":41,"Rep":3,"Trt":12,"Amendment":"Deep OM (CP1) + liq. Gypsum (CHT)","Practice Change":"Crop 1","Yield t/ha":6.519162115744681,"Protein":23.4,"|":17945.488764568763},
-  {"Plot":42,"Rep":3,"Trt":8,"Amendment":"Lime+Gypsum CHT+Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.05956678787234,"Protein":23.7,"|":1062.439024390244},
-  {"Plot":43,"Rep":3,"Trt":6,"Amendment":"Deep OM (CP1)","Practice Change":"Crop 1","Yield t/ha":6.396029749361702,"Protein":23.7,"|":17787.777777777777},
-  {"Plot":44,"Rep":3,"Trt":9,"Amendment":"Deep OM (CP1)+PAM","Practice Change":"Crop 1","Yield t/ha":6.268999694468085,"Protein":23.6,"|":1012.5633802816902},
-  {"Plot":45,"Rep":3,"Trt":2,"Amendment":"Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.120229763404255,"Protein":23.7,"|":912.1951219512195},
-  {"Plot":46,"Rep":3,"Trt":4,"Amendment":"Lime + Gypsum CHT","Practice Change":"Crop 1","Yield t/ha":7.462494905957446,"Protein":23.4,"|":908.9430894308944},
-  {"Plot":47,"Rep":3,"Trt":13,"Amendment":"Deep OM (CP1) + liq. Gypsum (CHT)+PAM","Practice Change":"Crop 1","Yield t/ha":6.435858070212766,"Protein":23.6,"|":18463.88888888889},
-  {"Plot":48,"Rep":3,"Trt":0,"Amendment":"Control","Practice Change":"Crop 1","Yield t/ha":7.269686206808511,"Protein":23.5,"|":694.6341463414634}
-];
+(() => {
+  'use strict';
 
-/* =========================
-   State
-   ========================= */
-const state = {
-  source: null, // {kind:'excel'|'embedded', name:string}
-  raw: [],
-  columns: [],
-  map: {
-    treatment: null,
-    baseline: null,
-    yield: null,
-    cost: null,
-    optional1: null
-  },
-  assumptions: {
-    areaHa: 100,
-    horizonYears: 10,
-    discountRatePct: 7,
-    priceYear1: 450,
-    priceGrowthPct: 0,
-    yieldScale: 1,
-    costScale: 1,
+  // -----------------------------
+  // Utilities
+  // -----------------------------
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-    benefitStartYear: 1,
-    effectDurationYears: 5,
-    decay: "linear", // none|linear|exp
-    halfLifeYears: 2,
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+  const fmt2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+  const money0 = (x) => (isFinite(x) ? `$${fmt.format(x)}` : '—');
+  const num2 = (x) => (isFinite(x) ? fmt2.format(x) : '—');
+  const pct1 = (x) => (isFinite(x) ? `${(x * 100).toFixed(1)}%` : '—');
 
-    costTimingDefault: "y1_only" // y1_only|y0_only|annual_duration|annual_horizon|split_50_50
-  },
-
-  // treatmentOverrides[name] = {enabled, adoption, yieldMult, costMult, costTiming}
-  treatmentOverrides: {},
-
-  // Additional benefits/costs (adders) applied on top of incremental yield/cost.
-  // Each adder contributes to benefits or costs streams depending on `kind`.
-  // amountBasis:
-  //   - "per_ha": amount * (area*adoption) unless per_ha view
-  //   - "total": amount is already total (whole-farm)
-  //   - "per_t": amount * incremental_yield(t/ha) * (area*adoption) * benefitFactor * (optionally use baseline yield? we use incremental yield)
-  // timing:
-  //   - "y0_only" | "y1_only" | "annual_horizon" | "annual_duration" | "custom"
-  // appliesTo: "all" or array of treatment names
-  adders: {
-    items: [
-      // Seed with examples (editable in UI; safe if UI not present)
-      // {id:"B1", kind:"benefit", label:"Soil carbon credit", amount:15, amountBasis:"per_ha", timing:"annual_duration", startYear:1, endYear:5, growthPct:0, appliesTo:"all", enabled:false, notes:"Example only"},
-      // {id:"C1", kind:"cost", label:"Extra labour/monitoring", amount:8, amountBasis:"per_ha", timing:"annual_duration", startYear:1, endYear:5, growthPct:0, appliesTo:"all", enabled:false, notes:"Example only"}
-    ]
-  },
-
-  // Copilot / AI prompt builder preferences
-  copilot: {
-    audience: "mixed", // farmer|policy|research|mixed
-    tone: "plain",     // plain|formal|technical
-    length: "long",    // short|medium|long
-    includeTables: true,
-    includeAssumptions: true,
-    includeCashflows: false,
-    includeSensitivity: true,
-    includeSimulations: true
-  },
-
-  // Monte Carlo simulation settings (uncertainty ranges around current inputs)
-  sim: {
-    enabled: true,
-    draws: 500,
-    seed: 12345,
-    // ranges are symmetric +/- around base
-    pricePct: 0.15,       // +/- 15%
-    yieldMultPct: 0.15,   // +/- 15% around treatment yieldMult (applies to all treatments)
-    costMultPct: 0.15,    // +/- 15% around treatment costMult (applies to all treatments)
-    discountPts: 0.02,    // +/- 2 percentage points
-    durationYears: 2,     // +/- 2 years
-    distribution: "triangular" // triangular|uniform
-  },
-
-  ui: {
-    activeTab: "import",
-    rankBy: "npv",
-    view: "whole_farm",
-    cashflowTreatment: null
-  },
-
-  cache: {
-    trialSummary: null,        // per-treatment means and deltas
-    cbaPerTreatment: null,     // per-treatment cba results + cashflows
-    lastSensitivity: null,
-    lastSim: null              // latest sim summary payload
-  }
-};
-
-/* =========================
-   DOM helpers
-   ========================= */
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-const byId = (id) => document.getElementById(id);
-function on(el, ev, fn){ if (el) el.addEventListener(ev, fn); }
-
-function escapeHtml(s){
-  return String(s ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-function toNum(v){
-  if (v === null || v === undefined) return NaN;
-  if (typeof v === "number") return v;
-  if (typeof v === "string"){
-    const s = v.replace(/[, ]+/g, "").replace(/^\$/,"");
-    const n = Number(s);
-    return Number.isFinite(n) ? n : NaN;
-  }
-  return NaN;
-}
-
-function fmtNumber(x, digits=2){
-  if (x === null || x === undefined || Number.isNaN(x)) return "—";
-  const n = Number(x);
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, {maximumFractionDigits: digits, minimumFractionDigits: digits});
-}
-
-function fmtInt(x){
-  if (x === null || x === undefined || Number.isNaN(x)) return "—";
-  const n = Number(x);
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, {maximumFractionDigits: 0});
-}
-
-function fmtMoney(x, digits=0){
-  if (x === null || x === undefined || Number.isNaN(x)) return "—";
-  const n = Number(x);
-  if (!Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const s = abs.toLocaleString(undefined, {minimumFractionDigits: digits, maximumFractionDigits: digits});
-  return (n < 0 ? "-$" : "$") + s;
-}
-
-function toast(msg, ms=2200){
-  const t = byId("toast");
-  const tt = byId("toastText");
-  if (!t || !tt) return;
-  tt.textContent = msg;
-  t.hidden = false;
-  clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => { t.hidden = true; }, ms);
-}
-
-/* =========================
-   Tabs + accessibility
-   ========================= */
-function setActiveTab(tab){
-  state.ui.activeTab = tab;
-  $$(".tab").forEach(btn => {
-    const onTab = btn.dataset.tab === tab;
-    btn.classList.toggle("is-active", onTab);
-    btn.setAttribute("aria-selected", onTab ? "true" : "false");
-    if (onTab) btn.focus({preventScroll:true});
-  });
-  $$(".panel").forEach(p => p.classList.toggle("is-active", p.dataset.panel === tab));
-}
-
-function bindTabKeyboardNav(){
-  const tablist = $(".tabs");
-  if (!tablist) return;
-  on(tablist, "keydown", (e) => {
-    const tabs = $$(".tab");
-    if (!tabs.length) return;
-    const current = document.activeElement;
-    const idx = tabs.indexOf(current);
-    if (idx < 0) return;
-
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Home" || e.key === "End"){
-      e.preventDefault();
-      let next = idx;
-      if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
-      if (e.key === "ArrowLeft") next = (idx - 1 + tabs.length) % tabs.length;
-      if (e.key === "Home") next = 0;
-      if (e.key === "End") next = tabs.length - 1;
-      tabs[next].focus();
-    }
-    if (e.key === "Enter" || e.key === " "){
-      const btn = document.activeElement;
-      if (btn && btn.classList.contains("tab")) btn.click();
-    }
-  });
-}
-
-/* =========================
-   Tooltips (data-tooltip)
-   Accessible: hover/focus shows tooltip; Esc closes
-   ========================= */
-const tooltip = {
-  el: null,
-  activeFor: null
-};
-
-function ensureTooltipEl(){
-  if (tooltip.el) return tooltip.el;
-  const div = document.createElement("div");
-  div.id = "appTooltip";
-  div.setAttribute("role","tooltip");
-  div.style.position = "fixed";
-  div.style.zIndex = "9999";
-  div.style.maxWidth = "360px";
-  div.style.padding = "10px 12px";
-  div.style.borderRadius = "14px";
-  div.style.border = "1px solid rgba(255,255,255,0.14)";
-  div.style.background = "rgba(11,16,32,0.92)";
-  div.style.backdropFilter = "blur(12px)";
-  div.style.color = "rgba(255,255,255,0.88)";
-  div.style.fontSize = "13px";
-  div.style.lineHeight = "1.35";
-  div.style.boxShadow = "0 10px 30px rgba(0,0,0,0.35)";
-  div.style.display = "none";
-  document.body.appendChild(div);
-  tooltip.el = div;
-  return div;
-}
-
-function showTooltipFor(el){
-  const text = el.getAttribute("data-tooltip");
-  if (!text) return;
-  const t = ensureTooltipEl();
-  tooltip.activeFor = el;
-  t.textContent = text;
-  t.style.display = "block";
-
-  const r = el.getBoundingClientRect();
-  const pad = 10;
-  const tw = Math.min(360, window.innerWidth - 2*pad);
-  t.style.maxWidth = tw + "px";
-
-  // initial position (below, aligned left)
-  let left = Math.min(window.innerWidth - pad - tw, Math.max(pad, r.left));
-  let top = r.bottom + 10;
-  t.style.left = left + "px";
-  t.style.top = top + "px";
-
-  // if offscreen bottom, move above
-  const tr = t.getBoundingClientRect();
-  if (tr.bottom > window.innerHeight - pad){
-    top = Math.max(pad, r.top - tr.height - 10);
-    t.style.top = top + "px";
+  function uid(prefix = 'id') {
+    return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
   }
 
-  // aria-describedby
-  const tipId = "appTooltip";
-  el.setAttribute("aria-describedby", tipId);
-}
-
-function hideTooltip(){
-  const t = tooltip.el;
-  if (t) t.style.display = "none";
-  if (tooltip.activeFor){
-    tooltip.activeFor.removeAttribute("aria-describedby");
-  }
-  tooltip.activeFor = null;
-}
-
-function bindTooltips(){
-  // Attach to any element with data-tooltip (existing + future dynamic)
-  const attach = (el) => {
-    if (el._tooltipBound) return;
-    el._tooltipBound = true;
-    on(el, "mouseenter", () => showTooltipFor(el));
-    on(el, "mouseleave", hideTooltip);
-    on(el, "focus", () => showTooltipFor(el));
-    on(el, "blur", hideTooltip);
-  };
-  $$("[data-tooltip]").forEach(attach);
-
-  on(document, "keydown", (e) => {
-    if (e.key === "Escape") hideTooltip();
-  });
-}
-
-/* =========================
-   Excel import
-   ========================= */
-function isEmptyCell(v){
-  return v === null || v === undefined || (typeof v === "string" && v.trim() === "");
-}
-
-function densestRowIndex(rows2d, maxScan=60){
-  const lim = Math.min(rows2d.length, maxScan);
-  let best = {idx: 0, score: -1};
-  for (let i=0; i<lim; i++){
-    const row = rows2d[i] || [];
-    const score = row.reduce((acc, v) => acc + (isEmptyCell(v) ? 0 : 1), 0);
-    if (score > best.score){
-      best = {idx: i, score};
-    }
-  }
-  return best.idx;
-}
-
-function dedupeHeaders(headers){
-  const seen = new Map();
-  return headers.map(h => {
-    const name = (h === null || h === undefined) ? "" : String(h).trim();
-    const base = name === "" ? "col" : name;
-    const count = seen.get(base) || 0;
-    seen.set(base, count + 1);
-    return count === 0 ? base : `${base}__${count}`;
-  });
-}
-
-function sheetToRows2D(wb){
-  const firstSheet = wb.SheetNames[0];
-  const ws = wb.Sheets[firstSheet];
-  return XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: null});
-}
-
-function rows2DToObjects(rows2d){
-  const headerIdx = densestRowIndex(rows2d, 60);
-  const headersRaw = rows2d[headerIdx] || [];
-  const headers = dedupeHeaders(headersRaw);
-
-  const out = [];
-  for (let r=headerIdx+1; r<rows2d.length; r++){
-    const row = rows2d[r] || [];
-    const nonEmpty = row.reduce((acc,v)=>acc + (isEmptyCell(v)?0:1), 0);
-    if (nonEmpty === 0) continue;
-
-    const obj = {};
-    for (let c=0; c<headers.length; c++){
-      obj[headers[c]] = (c < row.length) ? row[c] : null;
-    }
-
-    // Drop very sparse/footer-ish rows
-    const filled = Object.values(obj).reduce((acc,v)=>acc + (isEmptyCell(v)?0:1), 0);
-    if (filled < Math.max(3, Math.floor(headers.length*0.03))) continue;
-
-    out.push(obj);
+  function safeText(s) {
+    return String(s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   }
 
-  return {rows: out, columns: headers};
-}
-
-function unique(arr){
-  const s = new Set(arr);
-  return Array.from(s);
-}
-
-function percentile(arr, p){
-  if (!arr.length) return NaN;
-  const a = arr.slice().sort((x,y)=>x-y);
-  const idx = (p/100)*(a.length-1);
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return a[lo];
-  const t = idx - lo;
-  return a[lo]*(1-t) + a[hi]*t;
-}
-
-function detectDefaultMappings(rows, columns){
-  const cols = columns || (rows[0] ? Object.keys(rows[0]) : []);
-
-  const treatmentKey =
-    (cols.includes("Amendment") ? "Amendment" : null) ||
-    (cols.includes("Treatment") ? "Treatment" : null) ||
-    (cols.includes("Trt") ? "Trt" : null) ||
-    (cols.find(c => /treat|amend/i.test(c)) || null);
-
-  let yieldKey = null;
-  if (cols.includes("Yield t/ha")) yieldKey = "Yield t/ha";
-  else yieldKey = cols.find(c => /^yield\b/i.test(c)) || null;
-
-  let costKey = cols.includes("|") ? "|" : null;
-  if (!costKey){
-    const candidates = cols.filter(c => /cost|\$|\/ha|per ha|ha\b/i.test(c));
-    const scored = candidates.map(c => {
-      const nums = rows.map(r => toNum(r[c])).filter(v => Number.isFinite(v));
-      const coverage = nums.length / Math.max(1, rows.length);
-      const p50 = nums.length ? percentile(nums, 50) : -Infinity;
-      return {c, coverage, p50};
-    }).filter(x => x.coverage >= 0.5);
-    scored.sort((a,b) => (b.p50 - a.p50) || (b.coverage - a.coverage));
-    costKey = scored[0]?.c || null;
+  function asNumber(v) {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === 'number') return isFinite(v) ? v : NaN;
+    const s = String(v).trim();
+    if (!s) return NaN;
+    // Strip currency/commas/units
+    const cleaned = s
+      .replace(/\$/g, '')
+      .replace(/,/g, '')
+      .replace(/[^\d.\-+eE]/g, '');
+    const n = Number(cleaned);
+    return isFinite(n) ? n : NaN;
   }
 
-  const optional1 =
-    (cols.includes("Protein") ? "Protein" : null) ||
-    (cols.find(c => /protein|quality/i.test(c)) || null);
-
-  let baseline = null;
-  if (treatmentKey){
-    const groups = unique(rows.map(r => String(r[treatmentKey] ?? "").trim()).filter(Boolean));
-    baseline = groups.find(g => g.toLowerCase() === "control") || groups[0] || null;
+  function mean(arr) {
+    const xs = arr.filter((x) => isFinite(x));
+    if (!xs.length) return NaN;
+    return xs.reduce((a, b) => a + b, 0) / xs.length;
   }
 
-  return {treatmentKey, yieldKey, costKey, optional1, baseline};
-}
+  function sum(arr) {
+    const xs = arr.filter((x) => isFinite(x));
+    return xs.reduce((a, b) => a + b, 0);
+  }
 
-async function importExcelArrayBuffer(buf, name="workbook.xlsx"){
-  if (!window.XLSX) throw new Error("XLSX library missing. Check index.html include.");
-  const wb = XLSX.read(buf, {type:"array"});
-  const rows2d = sheetToRows2D(wb);
-  const {rows, columns} = rows2DToObjects(rows2d);
+  function stdev(arr) {
+    const xs = arr.filter((x) => isFinite(x));
+    if (xs.length < 2) return NaN;
+    const m = mean(xs);
+    const v = xs.reduce((acc, x) => acc + (x - m) ** 2, 0) / (xs.length - 1);
+    return Math.sqrt(v);
+  }
 
-  state.raw = rows;
-  state.columns = columns;
-  state.source = {kind:"excel", name};
+  function quantile(arr, q) {
+    const xs = arr.filter((x) => isFinite(x)).sort((a, b) => a - b);
+    if (!xs.length) return NaN;
+    const pos = (xs.length - 1) * clamp(q, 0, 1);
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    if (xs[base + 1] === undefined) return xs[base];
+    return xs[base] + rest * (xs[base + 1] - xs[base]);
+  }
 
-  const d = detectDefaultMappings(rows, columns);
-  state.map.treatment = d.treatmentKey;
-  state.map.yield = d.yieldKey;
-  state.map.cost = d.costKey;
-  state.map.optional1 = d.optional1;
-  state.map.baseline = d.baseline;
+  function discountFactor(r, t) {
+    return 1 / Math.pow(1 + r, t);
+  }
 
-  initTreatmentOverrides();
-  invalidateCache();
-  toast(`Imported: ${name}`);
-  renderAll();
-}
+  function downloadBlob(filename, blob) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 250);
+  }
 
-function loadEmbedded(){
-  state.raw = EMBEDDED_LOCKHART_ROWS.map(r => ({...r}));
-  state.columns = dedupeHeaders(Object.keys(state.raw[0] || {}));
-  state.source = {kind:"embedded", name:"Lockhart (embedded sample)"};
-
-  const d = detectDefaultMappings(state.raw, state.columns);
-  state.map.treatment = d.treatmentKey;
-  state.map.yield = d.yieldKey;
-  state.map.cost = d.costKey;
-  state.map.optional1 = d.optional1;
-  state.map.baseline = d.baseline;
-
-  initTreatmentOverrides();
-  invalidateCache();
-  toast("Loaded embedded sample");
-  renderAll();
-}
-
-async function tryLoadBundled(){
-  const candidates = ["./data.xlsx", "./Data for Lockhart-FA-031225 (1).xlsx"];
-  for (const url of candidates){
-    try{
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const buf = await res.arrayBuffer();
-      await importExcelArrayBuffer(buf, url.split("/").pop());
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
       return true;
-    } catch(e){
-      // keep trying
+    } catch {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      ta.remove();
+      return ok;
     }
   }
-  return false;
-}
 
-/* =========================
-   Treatment overrides
-   ========================= */
-function initTreatmentOverrides(){
-  state.treatmentOverrides = {};
-  const tkey = state.map.treatment;
-  if (!tkey || !state.raw.length) return;
+  function toCSV(rows) {
+    return rows
+      .map((r) =>
+        r
+          .map((cell) => {
+            const s = String(cell ?? '');
+            if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+            return s;
+          })
+          .join(',')
+      )
+      .join('\n');
+  }
 
-  const names = unique(state.raw.map(r => String(r[tkey] ?? "").trim()).filter(Boolean)).sort((a,b)=>a.localeCompare(b));
-  for (const n of names){
-    state.treatmentOverrides[n] = {
-      enabled: true,
-      adoption: 1,
-      yieldMult: 1,
-      costMult: 1,
-      costTiming: "default"
+  // -----------------------------
+  // State
+  // -----------------------------
+  const state = {
+    workbook: null,
+    sheetName: null,
+    rows: [], // array of objects
+    columns: [], // array of column names (unique)
+    meta: {
+      treatmentKey: null, // column name
+      treatmentLabelKey: null, // column name
+      controlPredicate: null, // function(row) => bool
+      yieldKey: null, // column name (t/ha)
+      yieldAltKey: null, // alt yield key (kg) sometimes
+      costKeys: [], // array of column names to sum (per ha)
+      hasTimeKey: false,
+      timeKey: null
+    },
+    assumptions: {
+      areaHa: 100,
+      horizonYears: 10,
+      discountRate: 0.07,
+      grainPrice: 450, // $/t
+      priceGrowth: 0.0, // annual growth rate
+      yieldGrowth: 0.0, // annual growth rate
+      costGrowth: 0.0, // annual growth rate
+      extrapolation: 'steady' // 'steady' | 'repeat_last' | 'average'
+    },
+    addBenefits: [], // [{id,name,value,unit,mode,startYear,endYear}]
+    addCosts: [],    // same structure
+    results: null,   // computed results object
+    simulations: null
+  };
+
+  // -----------------------------
+  // Tab system (accessible, never "inactive")
+  // -----------------------------
+  function initTabs() {
+    const tablist = $('[data-tablist]');
+    if (!tablist) return;
+
+    const tabs = $$('[role="tab"]', tablist);
+    const panels = $$('[role="tabpanel"]');
+
+    function activate(tab) {
+      tabs.forEach((t) => {
+        const selected = t === tab;
+        t.setAttribute('aria-selected', selected ? 'true' : 'false');
+        t.classList.toggle('is-active', selected);
+        t.tabIndex = selected ? 0 : -1;
+      });
+      panels.forEach((p) => {
+        const match = p.id === tab.getAttribute('aria-controls');
+        p.hidden = !match;
+        p.classList.toggle('is-active', match);
+      });
+
+      // Scroll to top of content on tab switch for clarity on mobile
+      const main = $('#mainContent');
+      if (main) main.scrollTop = 0;
+    }
+
+    tabs.forEach((t) => {
+      t.addEventListener('click', (e) => {
+        e.preventDefault();
+        activate(t);
+      });
+      t.addEventListener('keydown', (e) => {
+        const idx = tabs.indexOf(t);
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          const next = tabs[(idx + 1) % tabs.length];
+          next.focus();
+          activate(next);
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+          prev.focus();
+          activate(prev);
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          tabs[0].focus();
+          activate(tabs[0]);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          tabs[tabs.length - 1].focus();
+          activate(tabs[tabs.length - 1]);
+        }
+      });
+    });
+
+    // Activate first
+    const initially = tabs.find((t) => t.dataset.default === 'true') || tabs[0];
+    if (initially) activate(initially);
+  }
+
+  // -----------------------------
+  // Data ingestion
+  // -----------------------------
+  function uniquifyHeaders(headers) {
+    const seen = new Map();
+    return headers.map((h, i) => {
+      const base = (h ?? '').toString().trim();
+      const key = base || `col_${i}`;
+      const count = seen.get(key) ?? 0;
+      seen.set(key, count + 1);
+      return count === 0 ? key : `${key}__${count}`;
+    });
+  }
+
+  function sheetToRows(sheet) {
+    // Read as arrays to preserve header row as it exists
+    const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+    // Find best header row: choose row with most non-null cells
+    let bestIdx = 0;
+    let bestCount = -1;
+    for (let i = 0; i < Math.min(aoa.length, 60); i++) {
+      const row = aoa[i] || [];
+      const count = row.filter((v) => v !== null && v !== undefined && String(v).trim() !== '').length;
+      if (count > bestCount) {
+        bestCount = count;
+        bestIdx = i;
+      }
+    }
+
+    const header = uniquifyHeaders((aoa[bestIdx] || []).map((v) => (v === null ? '' : String(v))));
+    const rows = [];
+    for (let r = bestIdx + 1; r < aoa.length; r++) {
+      const line = aoa[r] || [];
+      // Ignore empty lines
+      const nonEmpty = line.some((v) => v !== null && v !== undefined && String(v).trim() !== '');
+      if (!nonEmpty) continue;
+
+      const obj = {};
+      for (let c = 0; c < header.length; c++) obj[header[c]] = line[c] ?? null;
+      rows.push(obj);
+    }
+
+    // Remove rows that look like repeated headers (common in templates)
+    const pruned = rows.filter((row) => {
+      const vals = Object.values(row).slice(0, 6).map((v) => String(v ?? '').toLowerCase());
+      const looksHeader = vals.join(' ').includes('plot') && vals.join(' ').includes('trt');
+      return !looksHeader;
+    });
+
+    return { header, rows: pruned, headerRowIndex: bestIdx };
+  }
+
+  function detectFields(columns, rows) {
+    const lc = (s) => String(s).toLowerCase();
+
+    const pick = (patterns) => {
+      for (const p of patterns) {
+        const found = columns.find((c) => p.test(lc(c)));
+        if (found) return found;
+      }
+      return null;
+    };
+
+    const treatmentKey =
+      pick([/\btrt\b/, /\btreat(ment)?\b/, /\boption\b/]) ||
+      columns[0];
+
+    const treatmentLabelKey =
+      pick([/\bamendment\b/, /\bpractice\b/, /\bname\b/, /\bscenario\b/, /\bdescription\b/]) ||
+      treatmentKey;
+
+    // Yield candidates
+    const yieldKey = pick([/yield.*t\/?ha/, /grain.*t\/?ha/, /t\/?ha.*yield/, /yield.*\(t\/?ha\)/]);
+    const yieldAltKey = pick([/grain.*yield.*\bkg\b/, /yield.*\bkg\b/, /grain.*yield.*\bt\)/]);
+
+    // Identify a time/period column (optional). If too many unique values, we treat as non-time.
+    const timeCandidate = pick([/\byear\b/, /\bperiod\b/, /\bseason\b/, /\bcrop\b/, /\bwave\b/]);
+    let hasTimeKey = false;
+    let timeKey = null;
+    if (timeCandidate) {
+      const uniq = new Set(rows.map((r) => String(r[timeCandidate] ?? '').trim()).filter(Boolean));
+      // If it looks like a short sequence (<= horizon or <= 15), treat as time
+      if (uniq.size > 1 && uniq.size <= 15) {
+        hasTimeKey = true;
+        timeKey = timeCandidate;
+      }
+    }
+
+    // Cost columns: prefer an explicit "total cost" if present, else sum plausible cost items
+    const totalCostKey = pick([
+      /total.*(variable|input|operat|treatment).*cost.*\/?ha/,
+      /total.*cost.*\/?ha/,
+      /cost.*total.*\/?ha/
+    ]);
+
+    let costKeys = [];
+    if (totalCostKey) {
+      costKeys = [totalCostKey];
+    } else {
+      const costRegex = /(cost|labou?r|machinery|seed|fert|urea|ammonia|lime|gypsum|herb|fung|insect|chemical|spray|application|planting|cultivation|harvest|trucking|fuel|diesel|cartage|contract)/i;
+      const excludeRegex = /(protein|moisture|test weight|biomass|weed score|satellite|soil|plot length|plot width|area|rep\b|block|ndvi)/i;
+
+      costKeys = columns.filter((c) => costRegex.test(c) && !excludeRegex.test(c));
+      // As a fallback, if nothing found, include numeric columns beyond the first few identifiers
+      if (!costKeys.length) {
+        const sample = rows.slice(0, 30);
+        const numericCols = columns.filter((c) => sample.some((r) => isFinite(asNumber(r[c]))));
+        costKeys = numericCols.slice(Math.min(6, numericCols.length));
+      }
+    }
+
+    // Detect control: Amendment contains "control" OR treatment id equals 1 and label indicates control.
+    const controlPredicate = (row) => {
+      const a = String(row[treatmentLabelKey] ?? '').toLowerCase();
+      const t = String(row[treatmentKey] ?? '').toLowerCase();
+      return a.includes('control') || t === '1' || t === '0';
+    };
+
+    return {
+      treatmentKey,
+      treatmentLabelKey,
+      yieldKey,
+      yieldAltKey,
+      costKeys,
+      hasTimeKey,
+      timeKey,
+      controlPredicate
     };
   }
-  if (state.map.baseline && state.treatmentOverrides[state.map.baseline]){
-    state.treatmentOverrides[state.map.baseline].enabled = true;
-    state.treatmentOverrides[state.map.baseline].adoption = 1;
-  }
-}
 
-function invalidateCache(){
-  state.cache.trialSummary = null;
-  state.cache.cbaPerTreatment = null;
-}
+  function summariseData(rows, meta) {
+    const treatKey = meta.treatmentKey;
+    const labelKey = meta.treatmentLabelKey;
 
-/* =========================
-   Core computations
-   ========================= */
-function mean(arr){
-  const xs = (arr || []).filter(v => Number.isFinite(v));
-  if (!xs.length) return NaN;
-  return xs.reduce((a,b)=>a+b,0)/xs.length;
-}
-
-function clamp01(x){
-  if (!Number.isFinite(x)) return 0;
-  return Math.max(0, Math.min(1, x));
-}
-
-function getTreatmentNames(){
-  const tkey = state.map.treatment;
-  if (!tkey || !state.raw.length) return [];
-  return unique(state.raw.map(r => String(r[tkey] ?? "").trim()).filter(Boolean)).sort((a,b)=>a.localeCompare(b));
-}
-
-function buildTrialSummary(){
-  if (state.cache.trialSummary) return state.cache.trialSummary;
-
-  const rows = state.raw;
-  const tkey = state.map.treatment;
-  const ykey = state.map.yield;
-  const ckey = state.map.cost;
-  if (!rows.length || !tkey || !ykey || !ckey) return [];
-
-  const yScale = Number(state.assumptions.yieldScale) || 1;
-  const cScale = Number(state.assumptions.costScale) || 1;
-
-  const buckets = new Map();
-  for (const r of rows){
-    const name = String(r[tkey] ?? "").trim();
-    if (!name) continue;
-    const y = toNum(r[ykey]) * yScale;
-    const c = toNum(r[ckey]) * cScale;
-    if (!buckets.has(name)) buckets.set(name, {name, n:0, yields:[], costs:[]});
-    const b = buckets.get(name);
-    b.n += 1;
-    if (Number.isFinite(y)) b.yields.push(y);
-    if (Number.isFinite(c)) b.costs.push(c);
-  }
-
-  const out = [];
-  for (const b of buckets.values()){
-    out.push({
-      name: b.name,
-      n: b.n,
-      yield_mean: mean(b.yields),
-      cost_mean: mean(b.costs)
+    // Group rows by treatment id (string)
+    const groups = new Map();
+    for (const r of rows) {
+      const id = String(r[treatKey] ?? '').trim() || 'Unknown';
+      const label = String(r[labelKey] ?? '').trim() || id;
+      if (!groups.has(id)) groups.set(id, { id, label, rows: [] });
+      groups.get(id).rows.push(r);
+      // Keep a more informative label if we find it
+      if (label && label !== id && label.length > (groups.get(id).label || '').length) {
+        groups.get(id).label = label;
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => {
+      // numeric sort if possible
+      const na = Number(a.id);
+      const nb = Number(b.id);
+      if (isFinite(na) && isFinite(nb)) return na - nb;
+      return a.id.localeCompare(b.id);
     });
   }
-  out.sort((a,b)=>a.name.localeCompare(b.name));
 
-  const baseName = state.map.baseline;
-  const base = out.find(x => x.name === baseName) || null;
+  // -----------------------------
+  // Core CBA calculations
+  // -----------------------------
+  function computePerHaForGroup(group, meta) {
+    const rows = group.rows;
+    const yKey = meta.yieldKey;
+    const yAlt = meta.yieldAltKey;
+    const costKeys = meta.costKeys;
 
-  for (const r of out){
-    r.delta_yield = base ? (r.yield_mean - base.yield_mean) : NaN;
-    r.delta_cost  = base ? (r.cost_mean  - base.cost_mean)  : NaN;
-  }
-
-  state.cache.trialSummary = out;
-  return out;
-}
-
-function priceForYear(year){
-  const p1 = Number(state.assumptions.priceYear1) || 0;
-  const g = (Number(state.assumptions.priceGrowthPct) || 0) / 100;
-  return p1 * Math.pow(1 + g, Math.max(0, year - 1));
-}
-
-function discountFactor(t){
-  const r = (Number(state.assumptions.discountRatePct) || 0) / 100;
-  return 1 / Math.pow(1 + r, t);
-}
-
-function benefitFactorByYear(year){
-  const start = Math.max(1, Math.floor(Number(state.assumptions.benefitStartYear) || 1));
-  const D = Math.max(1, Math.floor(Number(state.assumptions.effectDurationYears) || 1));
-  const decay = state.assumptions.decay || "linear";
-
-  const idx = year - start;
-  if (idx < 0) return 0;
-  if (idx >= D) return 0;
-
-  if (decay === "none") return 1;
-  if (decay === "linear"){
-    if (D === 1) return 1;
-    return Math.max(0, 1 - (idx / (D - 1)));
-  }
-  if (decay === "exp"){
-    const hl = Math.max(0.1, Number(state.assumptions.halfLifeYears) || 2);
-    const lambda = Math.log(2) / hl;
-    return Math.exp(-lambda * idx);
-  }
-  return 1;
-}
-
-function resolveCostTiming(name){
-  const ov = state.treatmentOverrides[name];
-  if (!ov) return state.assumptions.costTimingDefault;
-  const ct = ov.costTiming || "default";
-  if (ct === "default") return state.assumptions.costTimingDefault;
-  return ct;
-}
-
-/* =========================
-   Additional benefits/costs (adders)
-   ========================= */
-function normAdder(a){
-  // Ensure all fields exist and are safe
-  const out = {
-    id: String(a?.id ?? "").trim() || ("A" + Math.random().toString(16).slice(2,8).toUpperCase()),
-    kind: (a?.kind === "cost") ? "cost" : "benefit",
-    label: String(a?.label ?? "Untitled").trim(),
-    enabled: (a?.enabled === undefined) ? true : !!a.enabled,
-    amount: Number(a?.amount ?? 0),
-    amountBasis: (a?.amountBasis === "total" || a?.amountBasis === "per_t") ? a.amountBasis : "per_ha",
-    timing: (a?.timing || "annual_duration"),
-    startYear: Math.max(0, Math.floor(Number(a?.startYear ?? 1))),
-    endYear: Math.max(0, Math.floor(Number(a?.endYear ?? state.assumptions.effectDurationYears))),
-    growthPct: Number(a?.growthPct ?? 0),
-    appliesTo: a?.appliesTo ?? "all", // "all" or array of names
-    notes: String(a?.notes ?? "").trim()
-  };
-  return out;
-}
-
-function adderAppliesTo(adder, treatmentName){
-  if (!adder.enabled) return false;
-  const at = adder.appliesTo;
-  if (at === "all") return true;
-  if (Array.isArray(at)) return at.includes(treatmentName);
-  return true;
-}
-
-function applyAdderToStreams(adder, treatmentName, streams){
-  // streams: {benefits[], costs[], scale, perHaView, incYieldPerHa, horizonT}
-  if (!adderAppliesTo(adder, treatmentName)) return;
-
-  const T = streams.horizonT;
-  const g = (Number(adder.growthPct) || 0) / 100;
-
-  // Determine timing years
-  let years = [];
-  const timing = adder.timing;
-
-  if (timing === "y0_only") years = [0];
-  else if (timing === "y1_only") years = [1];
-  else if (timing === "annual_horizon") years = Array.from({length: T}, (_,i)=>i+1);
-  else if (timing === "annual_duration") {
-    // use benefitFactor window; but for adders we use start/end explicit with defaults
-    const start = Math.max(0, Math.floor(Number(adder.startYear)));
-    const end = Math.max(start, Math.floor(Number(adder.endYear)));
-    years = [];
-    for (let y=Math.max(0,start); y<=Math.min(T,end); y++){
-      years.push(y);
+    // Yield: prefer t/ha; else derive from kg and area if possible; else NaN
+    let yieldTHa = NaN;
+    if (yKey) {
+      yieldTHa = mean(rows.map((r) => asNumber(r[yKey])));
     }
-    // If user set startYear=1, it will include 1..end
-  } else if (timing === "custom") {
-    const start = Math.max(0, Math.floor(Number(adder.startYear)));
-    const end = Math.max(start, Math.floor(Number(adder.endYear)));
-    years = [];
-    for (let y=start; y<=Math.min(T,end); y++) years.push(y);
-  } else {
-    // fallback
-    years = Array.from({length: T}, (_,i)=>i+1);
-  }
-
-  // Amount scaling
-  for (const y of years){
-    let amt = Number(adder.amount) || 0;
-
-    // growth applies from year 1 onward for recurring; if year 0, apply no growth
-    if (y >= 1) amt = amt * Math.pow(1 + g, y - 1);
-
-    let v = 0;
-    if (adder.amountBasis === "per_ha"){
-      v = amt * streams.scale;
-    } else if (adder.amountBasis === "total"){
-      v = (streams.perHaView ? (amt / Math.max(1, (streams.scale || 1))) : amt);
-      // If in per-ha view, best-effort convert: total/scale. If scale=1 (per-ha already), stays total.
-    } else if (adder.amountBasis === "per_t"){
-      // apply to incremental yield (t/ha) with the same benefitFactor window used for yield effects
-      // if user wants per_t independent of benefitFactor they can set annual_horizon and amountBasis per_ha/total
-      const incY = streams.incYieldPerHa;
-      const bf = (y === 0) ? 0 : benefitFactorByYear(y);
-      v = amt * incY * bf * streams.scale;
-    }
-
-    if (adder.kind === "benefit") streams.benefits[y] += v;
-    else streams.costs[y] += v;
-  }
-}
-
-/* =========================
-   Cashflows + CBA
-   ========================= */
-function buildCashflowsForTreatment(treatmentName){
-  const summary = buildTrialSummary();
-  const baseName = state.map.baseline;
-  const base = summary.find(x => x.name === baseName);
-  const tr = summary.find(x => x.name === treatmentName);
-  if (!base || !tr) return null;
-
-  const ov = state.treatmentOverrides[treatmentName] || {enabled:true, adoption:1, yieldMult:1, costMult:1};
-  const enabled = !!ov.enabled;
-  const adoption = clamp01(Number(ov.adoption));
-  const yMult = Number(ov.yieldMult) || 1;
-  const cMult = Number(ov.costMult) || 1;
-
-  const area = Number(state.assumptions.areaHa) || 0;
-  const T = Math.max(1, Math.floor(Number(state.assumptions.horizonYears) || 1));
-
-  // Incremental deltas (per ha) vs baseline
-  const dy_perha_raw = (tr.delta_yield || 0);
-  const dc_perha_raw = (tr.delta_cost  || 0);
-
-  const dy_perha = dy_perha_raw * yMult;
-  const dc_perha = dc_perha_raw * cMult;
-
-  const perHaView = (state.ui.view === "per_ha");
-  const scale = perHaView ? 1 : (area * adoption);
-
-  const benefits = Array(T+1).fill(0); // year 0..T
-  const costs = Array(T+1).fill(0);
-
-  // Base yield-driven benefits
-  for (let y=1; y<=T; y++){
-    const bf = benefitFactorByYear(y);
-    const p = priceForYear(y);
-    const b = dy_perha * p * bf;
-    benefits[y] = b * scale;
-  }
-
-  // Incremental costs (from dataset delta costs) with timing
-  const timing = resolveCostTiming(treatmentName);
-  if (timing === "y1_only"){
-    costs[1] = dc_perha * scale;
-  } else if (timing === "y0_only"){
-    costs[0] = dc_perha * scale;
-  } else if (timing === "annual_duration"){
-    for (let y=1; y<=T; y++){
-      const bf = benefitFactorByYear(y);
-      if (bf > 0) costs[y] = dc_perha * scale;
-    }
-  } else if (timing === "annual_horizon"){
-    for (let y=1; y<=T; y++) costs[y] = dc_perha * scale;
-  } else if (timing === "split_50_50"){
-    costs[0] = 0.5 * dc_perha * scale;
-    costs[1] += 0.5 * dc_perha * scale;
-  } else {
-    costs[1] = dc_perha * scale;
-  }
-
-  // Apply additional adders (benefits/costs) on top
-  const streams = {
-    benefits,
-    costs,
-    scale,
-    perHaView,
-    incYieldPerHa: dy_perha,
-    horizonT: T
-  };
-  for (const a of state.adders.items.map(normAdder)){
-    applyAdderToStreams(a, treatmentName, streams);
-  }
-
-  // If disabled, zero-out in whole-farm view
-  if (!enabled && !perHaView){
-    for (let y=0; y<=T; y++){
-      benefits[y] = 0;
-      costs[y] = 0;
-    }
-  }
-
-  const net = benefits.map((b,i)=>b - costs[i]);
-
-  // PV
-  let pvB = 0, pvC = 0, npv = 0;
-  for (let t=0; t<=T; t++){
-    const df = discountFactor(t);
-    pvB += benefits[t]*df;
-    pvC += costs[t]*df;
-    npv += net[t]*df;
-  }
-  const bcr = (pvC === 0) ? (pvB === 0 ? NaN : Infinity) : (pvB / pvC);
-  const roi = (pvC === 0) ? NaN : (npv / pvC);
-
-  return {
-    name: treatmentName,
-    baseline: baseName,
-    enabled,
-    adoption,
-    yieldMult: yMult,
-    costMult: cMult,
-    timing,
-    dy_perha,
-    dc_perha,
-    // adders are embedded inside benefits/costs already
-    benefits,
-    costs,
-    net,
-    pvBenefits: pvB,
-    pvCosts: pvC,
-    npv,
-    bcr,
-    roi
-  };
-}
-
-function buildCbaAllTreatments(){
-  if (state.cache.cbaPerTreatment) return state.cache.cbaPerTreatment;
-
-  const names = getTreatmentNames();
-  const base = state.map.baseline;
-  if (!base || !names.length) return [];
-
-  const ordered = [base, ...names.filter(n => n !== base)];
-  const out = [];
-  for (const n of ordered){
-    const cf = buildCashflowsForTreatment(n);
-    if (cf) out.push(cf);
-  }
-  state.cache.cbaPerTreatment = out;
-  return out;
-}
-
-/* =========================
-   Simulations (Monte Carlo)
-   ========================= */
-function mulberry32(seed){
-  let a = seed >>> 0;
-  return function(){
-    a |= 0;
-    a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function sampleTriangular(rng, min, mode, max){
-  const u = rng();
-  const c = (mode - min) / (max - min);
-  if (u < c){
-    return min + Math.sqrt(u * (max - min) * (mode - min));
-  }
-  return max - Math.sqrt((1 - u) * (max - min) * (max - mode));
-}
-
-function sampleUniform(rng, min, max){
-  return min + (max - min) * rng();
-}
-
-function runMonteCarlo(){
-  const names = getTreatmentNames();
-  const base = state.map.baseline;
-  if (!names.length || !base) return null;
-
-  const draws = Math.max(50, Math.floor(Number(state.sim.draws) || 500));
-  const rng = mulberry32(Number(state.sim.seed) || 12345);
-
-  const baseAssump = JSON.parse(JSON.stringify(state.assumptions));
-  const baseOv = JSON.parse(JSON.stringify(state.treatmentOverrides));
-
-  const dist = state.sim.distribution || "triangular";
-  const drawVal = (min, mode, max) => (dist === "uniform" ? sampleUniform(rng, min, max) : sampleTriangular(rng, min, mode, max));
-
-  // storage: treatment -> array of metric values
-  const store = {};
-  for (const n of names) store[n] = {npv:[], bcr:[], roi:[]};
-  const bestCount = {}; for (const n of names) bestCount[n] = 0;
-
-  // Evaluate quickly by swapping assumptions/overrides in-place then restoring
-  const savedAssump = state.assumptions;
-  const savedOv = state.treatmentOverrides;
-
-  try{
-    for (let d=0; d<draws; d++){
-      // sample drivers
-      const price0 = baseAssump.priceYear1;
-      const price = drawVal(price0*(1-state.sim.pricePct), price0, price0*(1+state.sim.pricePct));
-
-      const disc0 = baseAssump.discountRatePct;
-      const disc = drawVal(Math.max(0, disc0 - state.sim.discountPts*100), disc0, disc0 + state.sim.discountPts*100);
-
-      const dur0 = baseAssump.effectDurationYears;
-      const dur = Math.max(1, Math.round(drawVal(Math.max(1, dur0 - state.sim.durationYears), dur0, dur0 + state.sim.durationYears)));
-
-      // treatment mult shocks applied multiplicatively around existing multipliers
-      const yShock = drawVal(1 - state.sim.yieldMultPct, 1, 1 + state.sim.yieldMultPct);
-      const cShock = drawVal(1 - state.sim.costMultPct, 1, 1 + state.sim.costMultPct);
-
-      state.assumptions = JSON.parse(JSON.stringify(baseAssump));
-      state.treatmentOverrides = JSON.parse(JSON.stringify(baseOv));
-
-      state.assumptions.priceYear1 = price;
-      state.assumptions.discountRatePct = disc;
-      state.assumptions.effectDurationYears = dur;
-
-      // Apply shocks to all treatments (baseline included, but baseline dy/dc is zero so it will not matter)
-      for (const n of Object.keys(state.treatmentOverrides)){
-        state.treatmentOverrides[n].yieldMult = (Number(baseOv[n]?.yieldMult) || 1) * yShock;
-        state.treatmentOverrides[n].costMult = (Number(baseOv[n]?.costMult) || 1) * cShock;
+    if (!isFinite(yieldTHa) && yAlt) {
+      // If alt yield appears to be kg from a plot, try to infer t/ha using area if present
+      // Common columns: "Area (m2)" or "Area" (m2). If we can find an area column, convert.
+      const areaKey = Object.keys(rows[0] || {}).find((c) => /area/i.test(c) && !/ha/i.test(c)) || null;
+      if (areaKey) {
+        const derived = rows.map((r) => {
+          const kg = asNumber(r[yAlt]);
+          const m2 = asNumber(r[areaKey]);
+          if (!isFinite(kg) || !isFinite(m2) || m2 <= 0) return NaN;
+          const ha = m2 / 10000;
+          return (kg / 1000) / ha; // (t) / ha
+        });
+        yieldTHa = mean(derived);
       }
+    }
 
-      invalidateCache();
-      const cba = buildCbaAllTreatments();
+    // Costs per ha: sum cost columns (per ha)
+    const perHaCosts = rows.map((r) => {
+      const vals = costKeys.map((k) => asNumber(r[k]));
+      return sum(vals);
+    });
+    const costPerHa = mean(perHaCosts);
 
-      // track best by NPV (highest finite)
-      let bestN = null;
-      let bestV = -Infinity;
+    return { yieldTHa, costPerHa };
+  }
 
-      for (const t of cba){
-        const npv = Number(t.npv);
-        const bcr = Number(t.bcr);
-        const roi = Number(t.roi);
+  function expandAddItems(items, assumptions, year) {
+    // returns {benefitsExtra, costsExtra} for that year (farm total, not per ha)
+    let total = 0;
+    for (const it of items) {
+      const start = Number(it.startYear ?? 1);
+      const end = Number(it.endYear ?? assumptions.horizonYears);
+      if (year < start || year > end) continue;
 
-        if (Number.isFinite(npv)) store[t.name].npv.push(npv);
-        if (Number.isFinite(bcr)) store[t.name].bcr.push(bcr);
-        if (Number.isFinite(roi)) store[t.name].roi.push(roi);
+      if (it.mode === 'oneoff' && year !== start) continue;
 
-        if (Number.isFinite(npv) && npv > bestV){
-          bestV = npv;
-          bestN = t.name;
+      const value = asNumber(it.value);
+      if (!isFinite(value)) continue;
+
+      if (it.unit === 'per_ha') total += value * assumptions.areaHa;
+      else total += value;
+    }
+    return total;
+  }
+
+  function computeTreatmentPV(perHa, assumptions, addBenefits, addCosts) {
+    const r = assumptions.discountRate;
+    const T = Math.max(1, Math.floor(assumptions.horizonYears));
+
+    const area = assumptions.areaHa;
+    const p0 = assumptions.grainPrice;
+
+    let pvBenefits = 0;
+    let pvCosts = 0;
+
+    for (let t = 1; t <= T; t++) {
+      const df = discountFactor(r, t);
+
+      // Growth assumptions applied to steady annual flows
+      const price = p0 * Math.pow(1 + assumptions.priceGrowth, t - 1);
+      const y = (perHa.yieldTHa || 0) * Math.pow(1 + assumptions.yieldGrowth, t - 1);
+      const c = (perHa.costPerHa || 0) * Math.pow(1 + assumptions.costGrowth, t - 1);
+
+      const benefitsBase = y * price * area; // $ per year
+      const costsBase = c * area;
+
+      const benefitsExtra = expandAddItems(addBenefits, assumptions, t);
+      const costsExtra = expandAddItems(addCosts, assumptions, t);
+
+      pvBenefits += (benefitsBase + benefitsExtra) * df;
+      pvCosts += (costsBase + costsExtra) * df;
+    }
+
+    const npv = pvBenefits - pvCosts;
+    const bcr = pvCosts !== 0 ? pvBenefits / pvCosts : NaN;
+    const roi = pvCosts !== 0 ? npv / pvCosts : NaN;
+
+    return { pvBenefits, pvCosts, npv, bcr, roi };
+  }
+
+  function computeAllResults() {
+    if (!state.rows.length) return null;
+
+    const groups = summariseData(state.rows, state.meta);
+
+    // Identify control group
+    let control = groups.find((g) => g.rows.some(state.meta.controlPredicate));
+    if (!control) control = groups[0] || null;
+
+    const perHaById = new Map();
+    const metricsById = new Map();
+
+    for (const g of groups) {
+      const perHa = computePerHaForGroup(g, state.meta);
+      perHaById.set(g.id, perHa);
+      const pv = computeTreatmentPV(perHa, state.assumptions, state.addBenefits, state.addCosts);
+      metricsById.set(g.id, { ...pv, perHa, label: g.label, id: g.id });
+    }
+
+    // Rank by NPV (descending)
+    const list = Array.from(metricsById.values()).sort((a, b) => (b.npv ?? -Infinity) - (a.npv ?? -Infinity));
+    const rank = new Map();
+    list.forEach((m, i) => rank.set(m.id, i + 1));
+
+    const controlM = control ? metricsById.get(control.id) : null;
+
+    // Build results table structure
+    const columns = groups.map((g) => ({ id: g.id, label: g.label, isControl: control ? g.id === control.id : false }));
+    const rows = [
+      { key: 'pvBenefits', label: 'Present value of benefits (PV Benefits)', format: money0 },
+      { key: 'pvCosts', label: 'Present value of costs (PV Costs)', format: money0 },
+      { key: 'npv', label: 'Net present value (NPV)', format: money0 },
+      { key: 'bcr', label: 'Benefit–cost ratio (BCR)', format: num2 },
+      { key: 'roi', label: 'Return on investment (ROI)', format: num2 },
+      { key: 'rank', label: 'Ranking (by NPV)', format: (x) => (isFinite(x) ? String(x) : '—') }
+    ];
+
+    const deltas = [
+      { key: 'dNPV', label: 'Δ NPV vs control', format: money0 },
+      { key: 'dPVBenefits', label: 'Δ PV benefits vs control', format: money0 },
+      { key: 'dPVCosts', label: 'Δ PV costs vs control', format: money0 }
+    ];
+
+    // Produce cell matrix
+    const table = {
+      controlId: control ? control.id : null,
+      columns,
+      rows: rows.map((r) => {
+        const cells = {};
+        for (const c of columns) {
+          const m = metricsById.get(c.id);
+          cells[c.id] = r.key === 'rank' ? rank.get(c.id) : (m ? m[r.key] : NaN);
         }
+        return { ...r, cells };
+      }),
+      deltas: deltas.map((r) => {
+        const cells = {};
+        for (const c of columns) {
+          const m = metricsById.get(c.id);
+          if (!m || !controlM) {
+            cells[c.id] = NaN;
+          } else {
+            if (r.key === 'dNPV') cells[c.id] = m.npv - controlM.npv;
+            if (r.key === 'dPVBenefits') cells[c.id] = m.pvBenefits - controlM.pvBenefits;
+            if (r.key === 'dPVCosts') cells[c.id] = m.pvCosts - controlM.pvCosts;
+          }
+        }
+        return { ...r, cells };
+      }),
+      raw: {
+        groups,
+        perHaById,
+        metricsById,
+        rank
       }
-      if (bestN) bestCount[bestN] += 1;
-    }
-  } finally {
-    // restore
-    state.assumptions = savedAssump;
-    state.treatmentOverrides = savedOv;
-    invalidateCache();
+    };
+
+    return table;
   }
 
-  // summaries
-  const summaryRows = [];
-  for (const n of names){
-    const xs = store[n].npv.slice().sort((a,b)=>a-b);
-    const ys = store[n].bcr.slice().sort((a,b)=>a-b);
-    const zs = store[n].roi.slice().sort((a,b)=>a-b);
-
-    const p = (arr, q) => percentile(arr, q);
-
-    const npvMean = xs.length ? xs.reduce((a,b)=>a+b,0)/xs.length : NaN;
-    const bcrMean = ys.length ? ys.reduce((a,b)=>a+b,0)/ys.length : NaN;
-    const roiMean = zs.length ? zs.reduce((a,b)=>a+b,0)/zs.length : NaN;
-
-    const probNpvPos = xs.length ? (xs.filter(v=>v>0).length / xs.length) : NaN;
-    const probBcrGt1 = ys.length ? (ys.filter(v=>v>1).length / ys.length) : NaN;
-    const probBest = bestCount[n] / draws;
-
-    summaryRows.push({
-      treatment: n,
-      isBaseline: (n === base),
-      draws: draws,
-      npv_mean: npvMean,
-      npv_p10: p(xs,10),
-      npv_p50: p(xs,50),
-      npv_p90: p(xs,90),
-      prob_npv_gt_0: probNpvPos,
-      bcr_mean: bcrMean,
-      bcr_p10: p(ys,10),
-      bcr_p50: p(ys,50),
-      bcr_p90: p(ys,90),
-      prob_bcr_gt_1: probBcrGt1,
-      roi_mean: roiMean,
-      roi_p10: p(zs,10),
-      roi_p50: p(zs,50),
-      roi_p90: p(zs,90),
-      prob_best_by_npv: probBest
-    });
+  // -----------------------------
+  // Simulations
+  // -----------------------------
+  function randn() {
+    // Box–Muller
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
   }
 
-  // rank by prob best
-  summaryRows.sort((a,b) => (b.prob_best_by_npv - a.prob_best_by_npv) || (b.npv_p50 - a.npv_p50));
+  function runSimulations() {
+    if (!state.results) return null;
 
-  const payload = {
-    settings: JSON.parse(JSON.stringify(state.sim)),
-    baseAssumptions: JSON.parse(JSON.stringify(state.assumptions)),
-    summary: summaryRows
-  };
+    const draws = Math.floor(asNumber($('#simDraws')?.value) || 2000);
+    const priceSD = Math.max(0, asNumber($('#simPriceSD')?.value) || 0.2); // proportional
+    const yieldSD = Math.max(0, asNumber($('#simYieldSD')?.value) || 0.15);
+    const costSD = Math.max(0, asNumber($('#simCostSD')?.value) || 0.15);
 
-  state.cache.lastSim = payload;
-  return payload;
-}
+    const { columns, raw } = state.results;
+    const out = {};
 
-/* =========================
-   Copilot / AI prompt builder
-   ========================= */
-function buildCopilotPayload(){
-  const cba = buildCbaAllTreatments();
-  const trial = buildTrialSummary();
-  const sens = state.cache.lastSensitivity;
-  const sim = state.cache.lastSim;
+    for (const col of columns) {
+      const base = raw.metricsById.get(col.id);
+      if (!base) continue;
 
-  const metric = state.ui.rankBy;
-  const audience = state.copilot.audience;
-  const tone = state.copilot.tone;
-  const length = state.copilot.length;
+      const npvs = [];
+      const bcrs = [];
+      const rois = [];
 
-  // Build vertical table structure explicitly for AI to reproduce in Word
-  const scored = cba.map(x => ({name:x.name, v: (metric==="npv"?x.npv:(metric==="bcr"?x.bcr:x.roi))}))
-    .sort((a,b)=> {
-      const aBad = !Number.isFinite(a.v);
-      const bBad = !Number.isFinite(b.v);
-      if (aBad && bBad) return a.name.localeCompare(b.name);
-      if (aBad) return 1;
-      if (bBad) return -1;
-      return (b.v - a.v);
-    });
-  const rankMap = {};
-  for (let i=0; i<scored.length; i++) rankMap[scored[i].name] = i+1;
+      for (let i = 0; i < draws; i++) {
+        const priceMult = Math.max(0, 1 + priceSD * randn());
+        const yieldMult = Math.max(0, 1 + yieldSD * randn());
+        const costMult = Math.max(0, 1 + costSD * randn());
 
-  const verticalTable = [
-    {indicator:"PV benefits", values:Object.fromEntries(cba.map(t=>[t.name, t.pvBenefits]))},
-    {indicator:"PV costs", values:Object.fromEntries(cba.map(t=>[t.name, t.pvCosts]))},
-    {indicator:"NPV", values:Object.fromEntries(cba.map(t=>[t.name, t.npv]))},
-    {indicator:"BCR", values:Object.fromEntries(cba.map(t=>[t.name, t.bcr]))},
-    {indicator:"ROI", values:Object.fromEntries(cba.map(t=>[t.name, t.roi]))},
-    {indicator:`Rank (by ${metric.toUpperCase()})`, values:Object.fromEntries(cba.map(t=>[t.name, rankMap[t.name]]))}
-  ];
+        // Temporarily adjust assumptions + perHa
+        const perHa = {
+          yieldTHa: (base.perHa.yieldTHa || 0) * yieldMult,
+          costPerHa: (base.perHa.costPerHa || 0) * costMult
+        };
+        const assumptions = { ...state.assumptions, grainPrice: state.assumptions.grainPrice * priceMult };
+        const pv = computeTreatmentPV(perHa, assumptions, state.addBenefits, state.addCosts);
 
-  // Include adders (additional benefits/costs) for transparency
-  const adders = state.adders.items.map(normAdder);
-
-  // Instructions (human-ready): no external calls; just a structured prompt
-  const instructions = {
-    task: "Write a decision-support policy brief and produce clean tables that can be pasted into Word.",
-    audiences: {
-      farmer: "Plain language, focus on what drives dollars and what can be changed on-farm. Avoid jargon.",
-      policy: "Policy-relevant framing, implications, implementation considerations, and budget/benefit narrative.",
-      research: "Transparent methods, assumptions, limitations, and reproducibility details.",
-      mixed: "Layered narrative: farmer-facing summary first, then policy and technical appendices."
-    },
-    style: {
-      tone,
-      length,
-      constraints: [
-        "Do not tell the reader what to choose; present trade-offs.",
-        "Explain NPV, PV benefits/costs, BCR, ROI in practical terms.",
-        "Always compare treatments against the baseline/control and state which baseline is used.",
-        "If negative NPV or low BCR occurs, suggest plausible improvement levers (cost reduction, yield gain, price, adoption, timing) without prescribing."
-      ]
-    },
-    outputs: {
-      mustInclude: [
-        "Executive summary (short, non-technical)",
-        "Methods and assumptions summary",
-        "Results section interpreting vertical CBA table",
-        "Drivers of results (yield delta, cost delta, additional adders, discounting, duration/decay)",
-        "Uncertainty (sensitivity and simulation if provided)",
-        "Implementation notes (practicalities, monitoring, data needs)",
-        "Appendix: copy-ready tables"
-      ],
-      tables: [
-        "Vertical CBA table (indicators as rows; treatments as columns; include baseline)",
-        "Trial means and deltas vs baseline",
-        "If simulation provided: NPV distribution summary (P10/P50/P90 and probabilities)"
-      ]
-    }
-  };
-
-  const payload = {
-    meta: {
-      generatedAt: new Date().toISOString(),
-      dataset: state.source?.name || "unknown",
-      baseline: state.map.baseline,
-      view: state.ui.view,
-      rankBy: metric
-    },
-    assumptions: state.copilot.includeAssumptions ? state.assumptions : undefined,
-    mappings: state.map,
-    adders,
-    trialSummary: trial,
-    cba: cba.map(t => ({
-      name: t.name,
-      pvBenefits: t.pvBenefits,
-      pvCosts: t.pvCosts,
-      npv: t.npv,
-      bcr: t.bcr,
-      roi: t.roi,
-      dy_perha: t.dy_perha,
-      dc_perha: t.dc_perha,
-      adoption: t.adoption,
-      enabled: t.enabled,
-      costTiming: t.timing
-    })),
-    verticalTable,
-    sensitivity: state.copilot.includeSensitivity ? sens : undefined,
-    simulation: state.copilot.includeSimulations ? sim : undefined,
-    cashflows: state.copilot.includeCashflows ? cba.map(t => ({name:t.name, benefits:t.benefits, costs:t.costs, net:t.net})) : undefined,
-    instructions
-  };
-
-  return payload;
-}
-
-async function copyTextToClipboard(text){
-  try{
-    await navigator.clipboard.writeText(text);
-    toast("Copied to clipboard");
-  } catch(e){
-    // fallback
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-    toast("Copied to clipboard");
-  }
-}
-
-/* =========================
-   Rendering
-   ========================= */
-function renderAll(){
-  renderDatasetPill();
-  renderImportKPIs();
-  renderColumns();
-  renderPreviewTable();
-
-  renderMappingSelectors();
-  renderTreatmentsConfigTable();
-
-  renderAssumptionsControls();
-  renderSanity();
-
-  renderResults();
-  renderCashflows();
-  renderSensitivity();
-  renderHalfLifeVisibility();
-
-  // New tabs (render only if DOM exists)
-  renderIntro();
-  renderAdders();
-  renderSimulations();
-  renderCopilot();
-
-  // tooltips
-  bindTooltips();
-}
-
-function renderDatasetPill(){
-  const pill = byId("datasetPill");
-  if (!pill) return;
-  if (!state.raw.length){
-    pill.textContent = "No data loaded";
-    pill.style.borderColor = "rgba(255,255,255,0.12)";
-    return;
-  }
-  const src = state.source?.name || "Dataset";
-  pill.textContent = `${src} · ${state.raw.length} rows`;
-  pill.style.borderColor = "rgba(125,211,252,0.35)";
-}
-
-function renderImportKPIs(){
-  const rowsEl = byId("kpiRows");
-  const trtEl = byId("kpiTreatments");
-  const baseEl = byId("kpiBaseline");
-  const keysEl = byId("kpiKeys");
-  if (!rowsEl || !trtEl || !baseEl || !keysEl) return;
-
-  rowsEl.textContent = fmtInt(state.raw.length);
-  const tkey = state.map.treatment;
-  const treatments = tkey ? getTreatmentNames() : [];
-  trtEl.textContent = fmtInt(treatments.length);
-  baseEl.textContent = state.map.baseline || "—";
-  keysEl.textContent = (state.map.yield && state.map.cost) ? `${state.map.yield} | ${state.map.cost}` : "—";
-}
-
-function renderColumns(){
-  const box = byId("columnsChips");
-  if (!box) return;
-  box.innerHTML = "";
-  if (!state.columns.length){
-    box.innerHTML = `<div class="muted">No columns yet.</div>`;
-    return;
-  }
-  const frag = document.createDocumentFragment();
-  for (const c of state.columns){
-    const d = document.createElement("div");
-    d.className = "chip";
-    d.textContent = c;
-    frag.appendChild(d);
-  }
-  box.appendChild(frag);
-}
-
-function renderPreviewTable(){
-  const wrap = byId("previewTableWrap");
-  const note = byId("previewNote");
-  if (!wrap || !note) return;
-
-  if (!state.raw.length){
-    note.hidden = false;
-    wrap.hidden = true;
-    wrap.innerHTML = "";
-    return;
-  }
-  note.hidden = true;
-  wrap.hidden = false;
-
-  const cols = (state.columns || Object.keys(state.raw[0] || {})).slice(0, 10);
-  const rows = state.raw.slice(0, 8);
-
-  let html = `<table><thead><tr>`;
-  for (const c of cols) html += `<th>${escapeHtml(c)}</th>`;
-  html += `</tr></thead><tbody>`;
-  for (const r of rows){
-    html += `<tr>`;
-    for (const c of cols){
-      const v = r[c];
-      html += `<td class="${typeof v === "number" ? "mono" : ""}">${escapeHtml(v)}</td>`;
-    }
-    html += `</tr>`;
-  }
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-}
-
-function fillSelect(sel, options, value, allowEmpty=false, emptyLabel="—"){
-  if (!sel) return;
-  sel.innerHTML = "";
-  if (allowEmpty){
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = emptyLabel;
-    sel.appendChild(opt0);
-  }
-  for (const o of options){
-    const opt = document.createElement("option");
-    opt.value = o;
-    opt.textContent = o;
-    if (o === value) opt.selected = true;
-    sel.appendChild(opt);
-  }
-  sel.disabled = options.length === 0;
-}
-
-function renderMappingSelectors(){
-  const cols = state.columns || [];
-  fillSelect(byId("mapTreatment"), cols, state.map.treatment, false);
-  fillSelect(byId("mapYield"), cols, state.map.yield, true, "—");
-  fillSelect(byId("mapCost"), cols, state.map.cost, true, "—");
-  fillSelect(byId("mapOptional1"), cols, state.map.optional1 || "", true, "—");
-
-  const tnames = getTreatmentNames();
-  fillSelect(byId("mapBaseline"), tnames, state.map.baseline, false);
-
-  fillSelect(byId("cashflowTreatment"), tnames, state.ui.cashflowTreatment || state.map.baseline || "", false);
-  fillSelect(byId("sensTreatment"), tnames, byId("sensTreatment")?.value || state.map.baseline || "", false);
-}
-
-function renderTreatmentsConfigTable(){
-  const wrap = byId("treatmentsConfigWrap");
-  if (!wrap) return;
-  const tnames = getTreatmentNames();
-  if (!tnames.length || !state.map.baseline){
-    wrap.innerHTML = `<div class="muted">Load data and set a treatment mapping first.</div>`;
-    return;
-  }
-
-  const costTimingOptions = [
-    {v:"default", label:"Default (from Assumptions)"},
-    {v:"y1_only", label:"Year 1 only"},
-    {v:"y0_only", label:"Year 0 only"},
-    {v:"annual_duration", label:"Annual during effect duration"},
-    {v:"annual_horizon", label:"Annual for full horizon"},
-    {v:"split_50_50", label:"Split 50% Year 0, 50% Year 1"}
-  ];
-
-  let html = `<table>
-    <thead><tr>
-      <th data-tooltip="Treatment label used to group rows and compute averages.">Treatment</th>
-      <th data-tooltip="Disable removes whole-farm impacts for this treatment (per-ha view still shows per-ha).">Enable</th>
-      <th data-tooltip="Share of farm area that adopts this option. Whole-farm totals scale by area x adoption.">Adoption (0-1)</th>
-      <th data-tooltip="Multiplier applied to incremental yield difference vs baseline.">Yield mult</th>
-      <th data-tooltip="Multiplier applied to incremental cost difference vs baseline.">Cost mult</th>
-      <th data-tooltip="When incremental costs occur over time (setup vs annual).">Cost timing</th>
-    </tr></thead>
-    <tbody>`;
-
-  for (const name of tnames){
-    const ov = state.treatmentOverrides[name] || {enabled:true, adoption:1, yieldMult:1, costMult:1, costTiming:"default"};
-    const isBase = name === state.map.baseline;
-    const badge = isBase ? ` <span class="badge">Baseline</span>` : "";
-    html += `<tr>
-      <td>${escapeHtml(name)}${badge}</td>
-      <td class="mono">
-        <input type="checkbox" data-ov="enabled" data-name="${escapeHtml(name)}" ${ov.enabled ? "checked":""} />
-      </td>
-      <td><input class="tinput" type="number" step="0.05" min="0" max="1" data-ov="adoption" data-name="${escapeHtml(name)}" value="${escapeHtml(String(ov.adoption))}" /></td>
-      <td><input class="tinput" type="number" step="0.05" data-ov="yieldMult" data-name="${escapeHtml(name)}" value="${escapeHtml(String(ov.yieldMult))}" /></td>
-      <td><input class="tinput" type="number" step="0.05" data-ov="costMult" data-name="${escapeHtml(name)}" value="${escapeHtml(String(ov.costMult))}" /></td>
-      <td>
-        <select class="tselect" data-ov="costTiming" data-name="${escapeHtml(name)}">
-          ${costTimingOptions.map(o => `<option value="${o.v}" ${o.v===ov.costTiming ? "selected":""}>${escapeHtml(o.label)}</option>`).join("")}
-        </select>
-      </td>
-    </tr>`;
-  }
-
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-
-  wrap.querySelectorAll("input[data-ov], select[data-ov]").forEach(el => {
-    on(el, "change", (e) => {
-      const name = e.target.getAttribute("data-name");
-      const key = e.target.getAttribute("data-ov");
-      if (!state.treatmentOverrides[name]) state.treatmentOverrides[name] = {enabled:true, adoption:1, yieldMult:1, costMult:1, costTiming:"default"};
-
-      if (e.target.type === "checkbox"){
-        state.treatmentOverrides[name][key] = e.target.checked;
-      } else if (key === "costTiming"){
-        state.treatmentOverrides[name][key] = e.target.value;
-      } else {
-        state.treatmentOverrides[name][key] = Number(e.target.value);
+        npvs.push(pv.npv);
+        bcrs.push(pv.bcr);
+        rois.push(pv.roi);
       }
 
-      if (name === state.map.baseline){
-        state.treatmentOverrides[name].enabled = true;
-      }
-
-      invalidateCache();
-      renderResults();
-      renderCashflows();
-      renderCopilot(); // prompt updates
-    });
-  });
-}
-
-function renderAssumptionsControls(){
-  const a = state.assumptions;
-  if (byId("assumpArea")) byId("assumpArea").value = a.areaHa;
-  if (byId("assumpHorizon")) byId("assumpHorizon").value = a.horizonYears;
-  if (byId("assumpDiscount")) byId("assumpDiscount").value = a.discountRatePct;
-  if (byId("assumpPrice")) byId("assumpPrice").value = a.priceYear1;
-  if (byId("assumpPriceGrowth")) byId("assumpPriceGrowth").value = a.priceGrowthPct;
-  if (byId("assumpYieldScale")) byId("assumpYieldScale").value = String(a.yieldScale);
-  if (byId("assumpCostScale")) byId("assumpCostScale").value = String(a.costScale);
-
-  if (byId("assumpBenefitStart")) byId("assumpBenefitStart").value = a.benefitStartYear;
-  if (byId("assumpDuration")) byId("assumpDuration").value = a.effectDurationYears;
-  if (byId("assumpDecay")) byId("assumpDecay").value = a.decay;
-  if (byId("assumpHalfLife")) byId("assumpHalfLife").value = a.halfLifeYears;
-  if (byId("assumpCostTimingDefault")) byId("assumpCostTimingDefault").value = a.costTimingDefault;
-
-  // Simulation controls (optional)
-  if (byId("simDraws")) byId("simDraws").value = state.sim.draws;
-  if (byId("simSeed")) byId("simSeed").value = state.sim.seed;
-  if (byId("simPricePct")) byId("simPricePct").value = Math.round(state.sim.pricePct * 100);
-  if (byId("simYieldMultPct")) byId("simYieldMultPct").value = Math.round(state.sim.yieldMultPct * 100);
-  if (byId("simCostMultPct")) byId("simCostMultPct").value = Math.round(state.sim.costMultPct * 100);
-  if (byId("simDiscountPts")) byId("simDiscountPts").value = Math.round(state.sim.discountPts * 1000) / 10; // in pp
-  if (byId("simDurationYears")) byId("simDurationYears").value = state.sim.durationYears;
-  if (byId("simDistribution")) byId("simDistribution").value = state.sim.distribution;
-}
-
-function renderHalfLifeVisibility(){
-  const decay = state.assumptions.decay;
-  const row = byId("halfLifeRow");
-  if (!row) return;
-  row.hidden = decay !== "exp";
-}
-
-function renderSanity(){
-  const box = byId("sanityBox");
-  if (!box) return;
-  if (!state.raw.length || !state.map.yield || !state.map.cost){
-    box.innerHTML = `<div class="muted">Load data and set yield/cost mapping to see diagnostics.</div>`;
-    return;
-  }
-
-  const yScale = Number(state.assumptions.yieldScale) || 1;
-  const cScale = Number(state.assumptions.costScale) || 1;
-
-  const ys = state.raw.map(r => toNum(r[state.map.yield]) * yScale).filter(Number.isFinite);
-  const cs = state.raw.map(r => toNum(r[state.map.cost]) * cScale).filter(Number.isFinite);
-
-  const yP50 = percentile(ys, 50), yP5 = percentile(ys, 5), yP95 = percentile(ys, 95);
-  const cP50 = percentile(cs, 50), cP5 = percentile(cs, 5), cP95 = percentile(cs, 95);
-
-  const warnings = [];
-  if (!Number.isFinite(yP50) || yP50 <= 0) warnings.push("Yield median is non-positive; check yield mapping/scaling.");
-  if (!Number.isFinite(cP50)) warnings.push("Cost median invalid; check cost mapping/scaling.");
-  if (Number.isFinite(yP95) && yP95 > 50) warnings.push("Yield P95 looks very high for t/ha; consider yield scale.");
-  if (Number.isFinite(cP95) && cP95 > 100000) warnings.push("Cost P95 looks extremely high; confirm the cost column is correct.");
-
-  const warnHtml = warnings.length ? `
-    <div class="sanity-item">
-      <div class="sanity-item__title">Warnings</div>
-      <div class="sanity-item__text">${warnings.map(w => `• ${escapeHtml(w)}`).join("<br>")}</div>
-    </div>` : "";
-
-  box.innerHTML = `
-    <div class="sanity-item">
-      <div class="sanity-item__title">Detected mapping</div>
-      <div class="sanity-item__text">
-        Treatment: <code>${escapeHtml(state.map.treatment || "—")}</code><br>
-        Baseline: <code>${escapeHtml(state.map.baseline || "—")}</code><br>
-        Yield: <code>${escapeHtml(state.map.yield || "—")}</code><br>
-        Cost: <code>${escapeHtml(state.map.cost || "—")}</code>
-      </div>
-    </div>
-
-    <div class="sanity-item">
-      <div class="sanity-item__title">Yield distribution (scaled)</div>
-      <div class="sanity-item__text">P5=${escapeHtml(fmtNumber(yP5,3))}, P50=${escapeHtml(fmtNumber(yP50,3))}, P95=${escapeHtml(fmtNumber(yP95,3))}</div>
-    </div>
-
-    <div class="sanity-item">
-      <div class="sanity-item__title">Cost distribution (scaled)</div>
-      <div class="sanity-item__text">P5=${escapeHtml(fmtMoney(cP5,0))}, P50=${escapeHtml(fmtMoney(cP50,0))}, P95=${escapeHtml(fmtMoney(cP95,0))}</div>
-    </div>
-
-    ${warnHtml}
-  `;
-}
-
-function renderTrialSummary(){
-  const wrap = byId("trialSummaryWrap");
-  if (!wrap) return;
-  const sum = buildTrialSummary();
-  if (!sum.length){
-    wrap.innerHTML = `<div class="muted">Load data and confirm mappings.</div>`;
-    return;
-  }
-
-  let html = `<table>
-    <thead><tr>
-      <th>Treatment</th>
-      <th>N</th>
-      <th>Yield mean (t/ha)</th>
-      <th>Cost mean (/ha)</th>
-      <th>Δ Yield vs baseline</th>
-      <th>Δ Cost vs baseline</th>
-    </tr></thead><tbody>`;
-
-  for (const r of sum){
-    const isBase = r.name === state.map.baseline;
-    const badge = isBase ? ` <span class="badge">Baseline</span>` : "";
-    html += `<tr>
-      <td>${escapeHtml(r.name)}${badge}</td>
-      <td class="mono">${fmtInt(r.n)}</td>
-      <td class="mono">${fmtNumber(r.yield_mean,3)}</td>
-      <td class="mono">${fmtMoney(r.cost_mean,0)}</td>
-      <td class="mono">${fmtNumber(r.delta_yield,3)}</td>
-      <td class="mono">${fmtMoney(r.delta_cost,0)}</td>
-    </tr>`;
-  }
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-}
-
-function verticalCbaTable(cbaList){
-  const names = cbaList.map(x => x.name);
-
-  const rows = [
-    {label:"PV benefits", key:"pvBenefits"},
-    {label:"PV costs", key:"pvCosts"},
-    {label:"NPV", key:"npv"},
-    {label:"BCR", key:"bcr"},
-    {label:"ROI", key:"roi"},
-    {label:"Rank (by current metric)", key:"rank"}
-  ];
-
-  const metric = state.ui.rankBy;
-  const scored = cbaList.map(x => {
-    const v = (metric === "npv") ? x.npv : (metric === "bcr" ? x.bcr : x.roi);
-    return {name:x.name, v};
-  });
-
-  scored.sort((a,b) => {
-    const av = a.v, bv = b.v;
-    const aBad = !Number.isFinite(av);
-    const bBad = !Number.isFinite(bv);
-    if (aBad && bBad) return a.name.localeCompare(b.name);
-    if (aBad) return 1;
-    if (bBad) return -1;
-    return (bv - av);
-  });
-
-  const rankMap = {};
-  for (let i=0; i<scored.length; i++) rankMap[scored[i].name] = i+1;
-
-  let html = `<table><thead><tr><th>Indicator</th>`;
-  for (const n of names){
-    const isBase = n === state.map.baseline;
-    html += `<th>${escapeHtml(n)}${isBase ? "<br><span class='muted'>(baseline)</span>":""}</th>`;
-  }
-  html += `</tr></thead><tbody>`;
-
-  for (const r of rows){
-    html += `<tr><td>${escapeHtml(r.label)}</td>`;
-    for (const t of cbaList){
-      let v = "";
-      if (r.key === "rank"){
-        v = rankMap[t.name] ? String(rankMap[t.name]) : "—";
-      } else if (r.key === "bcr" || r.key === "roi"){
-        v = fmtNumber(t[r.key], 3);
-      } else {
-        v = fmtMoney(t[r.key], 0);
-      }
-      html += `<td class="mono">${escapeHtml(v)}</td>`;
+      out[col.id] = {
+        id: col.id,
+        label: col.label,
+        draws,
+        npv: {
+          mean: mean(npvs),
+          sd: stdev(npvs),
+          p10: quantile(npvs, 0.10),
+          p50: quantile(npvs, 0.50),
+          p90: quantile(npvs, 0.90),
+          probPositive: npvs.filter((x) => x > 0).length / npvs.length
+        },
+        bcr: {
+          mean: mean(bcrs),
+          p10: quantile(bcrs, 0.10),
+          p50: quantile(bcrs, 0.50),
+          p90: quantile(bcrs, 0.90)
+        },
+        roi: {
+          mean: mean(rois),
+          p10: quantile(rois, 0.10),
+          p50: quantile(rois, 0.50),
+          p90: quantile(rois, 0.90)
+        }
+      };
     }
-    html += `</tr>`;
-  }
-  html += `</tbody></table>`;
-  return html;
-}
 
-function renderResults(){
-  const cbaWrap = byId("cbaVerticalWrap");
-  const chart = byId("npvChart");
-  if (!cbaWrap) return;
-
-  if (!state.raw.length || !state.map.treatment || !state.map.baseline || !state.map.yield || !state.map.cost){
-    cbaWrap.innerHTML = `<div class="muted">Load data and confirm mappings (treatment, baseline, yield, cost).</div>`;
-    if (byId("trialSummaryWrap")) byId("trialSummaryWrap").innerHTML = "";
-    if (chart) drawEmpty(chart, "Load data to see NPV chart");
-    return;
+    return { meta: { draws, priceSD, yieldSD, costSD }, byTreatment: out };
   }
 
-  const cba = buildCbaAllTreatments();
-  if (!cba.length){
-    cbaWrap.innerHTML = `<div class="muted">Could not compute results. Check mappings and assumptions.</div>`;
-    if (chart) drawEmpty(chart, "No results yet");
-    return;
+  function renderHistogram(canvas, values, bins = 24) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+    const h = canvas.height = canvas.clientHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, w, h);
+
+    const xs = values.filter((v) => isFinite(v));
+    if (!xs.length) return;
+
+    const min = Math.min(...xs);
+    const max = Math.max(...xs);
+    const span = max - min || 1;
+
+    const counts = Array.from({ length: bins }, () => 0);
+    for (const x of xs) {
+      const idx = clamp(Math.floor(((x - min) / span) * bins), 0, bins - 1);
+      counts[idx]++;
+    }
+    const maxC = Math.max(...counts);
+
+    const padL = 32 * devicePixelRatio;
+    const padR = 12 * devicePixelRatio;
+    const padT = 12 * devicePixelRatio;
+    const padB = 22 * devicePixelRatio;
+
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    // axes
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1 * devicePixelRatio;
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--wb-border').trim() || '#cfd8dc';
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, padT + plotH);
+    ctx.lineTo(padL + plotW, padT + plotH);
+    ctx.stroke();
+
+    // bars
+    const barW = plotW / bins;
+    for (let i = 0; i < bins; i++) {
+      const c = counts[i];
+      const bh = (c / maxC) * plotH;
+      const x0 = padL + i * barW;
+      const y0 = padT + plotH - bh;
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--wb-accent').trim() || '#0b7285';
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x0 + 1, y0, Math.max(1, barW - 2), bh);
+    }
+    ctx.globalAlpha = 1;
+
+    // simple labels
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--wb-text').trim() || '#102a43';
+    ctx.font = `${12 * devicePixelRatio}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Count', 4 * devicePixelRatio, padT + plotH / 2);
+
+    ctx.textBaseline = 'top';
+    ctx.fillText(money0(min), padL, padT + plotH + 4 * devicePixelRatio);
+    ctx.textAlign = 'right';
+    ctx.fillText(money0(max), padL + plotW, padT + plotH + 4 * devicePixelRatio);
+    ctx.textAlign = 'left';
   }
 
-  cbaWrap.innerHTML = verticalCbaTable(cba);
-  renderTrialSummary();
-  if (chart) drawNpvChart(chart, cba);
-
-  // Optional: display note about adders if any enabled
-  const enabledAdders = state.adders.items.map(normAdder).filter(a=>a.enabled);
-  const note = byId("resultsNote");
-  if (note && enabledAdders.length){
-    note.textContent = `Definitions: PV benefits and PV costs are discounted sums. NPV = PV benefits − PV costs. BCR = PV benefits ÷ PV costs. ROI = NPV ÷ PV costs. Additional benefits/costs are included (${enabledAdders.length} adders enabled).`;
-  }
-}
-
-function renderCashflows(){
-  const tableWrap = byId("cashflowsTableWrap");
-  const chart = byId("cashflowChart");
-  if (!tableWrap) return;
-
-  if (!state.raw.length || !state.map.baseline){
-    tableWrap.innerHTML = `<div class="muted">Load data first.</div>`;
-    if (chart) drawEmpty(chart, "Load data to see cashflows");
-    return;
+  // -----------------------------
+  // Rendering
+  // -----------------------------
+  function setStatus(msg, tone = 'info') {
+    const el = $('#statusBox');
+    if (!el) return;
+    el.dataset.tone = tone;
+    el.innerHTML = safeText(msg);
+    el.hidden = !msg;
   }
 
-  const tnames = getTreatmentNames();
-  if (!tnames.length) return;
+  function renderDataSummary() {
+    const box = $('#dataSummary');
+    if (!box) return;
 
-  const sel = byId("cashflowTreatment");
-  const current = sel ? (sel.value || state.ui.cashflowTreatment || state.map.baseline) : (state.ui.cashflowTreatment || state.map.baseline);
-  state.ui.cashflowTreatment = current;
+    if (!state.rows.length) {
+      box.innerHTML = `<div class="muted">No data loaded yet.</div>`;
+      return;
+    }
 
-  const cf = buildCashflowsForTreatment(current);
-  if (!cf){
-    tableWrap.innerHTML = `<div class="muted">Select a treatment.</div>`;
-    if (chart) drawEmpty(chart, "No cashflows");
-    return;
-  }
+    const groups = summariseData(state.rows, state.meta);
+    const n = state.rows.length;
+    const c = state.columns.length;
 
-  const T = Math.max(1, Math.floor(Number(state.assumptions.horizonYears) || 1));
-  let html = `<table>
-    <thead><tr>
-      <th>Year</th>
-      <th>Price ($/t)</th>
-      <th>Benefit factor</th>
-      <th>Benefits</th>
-      <th>Costs</th>
-      <th>Net</th>
-      <th>Discount factor</th>
-      <th>PV net</th>
-    </tr></thead><tbody>`;
+    const yieldKey = state.meta.yieldKey || state.meta.yieldAltKey || 'Not detected';
+    const costKeyText = state.meta.costKeys.length ? `${state.meta.costKeys.length} cost columns detected` : 'No cost columns detected';
 
-  for (let y=0; y<=T; y++){
-    const price = (y === 0) ? "—" : fmtNumber(priceForYear(y), 2);
-    const bf = (y === 0) ? "—" : fmtNumber(benefitFactorByYear(y), 3);
-    const df = fmtNumber(discountFactor(y), 4);
-    const pvnet = cf.net[y] * discountFactor(y);
-    html += `<tr>
-      <td class="mono">${y}</td>
-      <td class="mono">${escapeHtml(price)}</td>
-      <td class="mono">${escapeHtml(bf)}</td>
-      <td class="mono">${escapeHtml(fmtMoney(cf.benefits[y],0))}</td>
-      <td class="mono">${escapeHtml(fmtMoney(cf.costs[y],0))}</td>
-      <td class="mono">${escapeHtml(fmtMoney(cf.net[y],0))}</td>
-      <td class="mono">${escapeHtml(df)}</td>
-      <td class="mono">${escapeHtml(fmtMoney(pvnet,0))}</td>
-    </tr>`;
-  }
-  html += `</tbody></table>`;
-  tableWrap.innerHTML = html;
-
-  if (byId("cfPvBenefits")) byId("cfPvBenefits").textContent = fmtMoney(cf.pvBenefits, 0);
-  if (byId("cfPvCosts")) byId("cfPvCosts").textContent = fmtMoney(cf.pvCosts, 0);
-  if (byId("cfNpv")) byId("cfNpv").textContent = fmtMoney(cf.npv, 0);
-  if (byId("cfBcr")) byId("cfBcr").textContent = Number.isFinite(cf.bcr) ? fmtNumber(cf.bcr, 3) : "—";
-
-  if (chart) drawCashflowChart(chart, cf);
-}
-
-function renderSensitivity(){
-  const wrap = byId("sensitivityWrap");
-  if (!wrap) return;
-
-  if (!state.cache.lastSensitivity){
-    wrap.innerHTML = `<div class="muted">Run sensitivity to see results.</div>`;
-    return;
-  }
-  wrap.innerHTML = sensitivityTableHtml(state.cache.lastSensitivity);
-}
-
-/* =========================
-   New tab renderers
-   ========================= */
-function renderIntro(){
-  const el = byId("introWrap");
-  if (!el) return;
-  const base = state.map.baseline || "Control";
-  const ds = state.source?.name || "your dataset";
-
-  const enabledAdders = state.adders.items.map(normAdder).filter(a=>a.enabled);
-  const addersLine = enabledAdders.length
-    ? `This analysis also includes ${enabledAdders.length} additional benefit/cost items (for example, monitoring costs or co-benefits) that you can turn on/off and tailor.`
-    : `You can add extra benefits and extra costs (beyond yield and amendment costs) in the Additional Benefits & Costs tab if needed.`;
-
-  const intro = `
-    <div class="prose">
-      <p><strong>What this tool does</strong>: It compares each treatment against the baseline (<code>${escapeHtml(base)}</code>) using your imported data (${escapeHtml(ds)}). It converts trial differences into dollar outcomes over time using price, discounting, and an effect duration/decay model.</p>
-      <p><strong>Who it is for</strong>: Farmers can see which drivers move dollars (yield, costs, timing, adoption). Policy makers can see assumptions, net benefits, and uncertainty. Researchers can audit mappings, cashflows, and exports.</p>
-      <p><strong>What drives the results</strong>: Incremental yield (t/ha) and incremental costs (/ha) relative to baseline. Benefits are valued using grain price assumptions. Costs can be one-off or annual. Adoption scales results to whole-farm totals.</p>
-      <p>${escapeHtml(addersLine)}</p>
-      <p><strong>Decision support</strong>: Results show trade-offs and sensitivities. The tool does not tell you what to choose.</p>
-    </div>
-  `;
-  el.innerHTML = intro;
-}
-
-function renderAdders(){
-  const wrap = byId("addersTableWrap");
-  if (!wrap) return;
-
-  const items = state.adders.items.map(normAdder);
-  if (!items.length){
-    wrap.innerHTML = `<div class="muted">No additional benefit/cost items yet. Use “Add benefit” or “Add cost” to create one.</div>`;
-    return;
-  }
-
-  const tnames = getTreatmentNames();
-
-  let html = `<table>
-    <thead><tr>
-      <th data-tooltip="Enable/disable this extra benefit or cost.">On</th>
-      <th data-tooltip="Benefit adds to benefits stream; Cost adds to costs stream.">Kind</th>
-      <th data-tooltip="Short label used in reports and exports.">Label</th>
-      <th data-tooltip="Amount value in dollars. Interpretation depends on basis.">Amount</th>
-      <th data-tooltip="per_ha scales by area and adoption; total is already whole-farm; per_t multiplies incremental yield.">Basis</th>
-      <th data-tooltip="When the item applies (setup vs annual).">Timing</th>
-      <th data-tooltip="Start year (0 allowed for setup costs).">Start</th>
-      <th data-tooltip="End year (used for duration/custom).">End</th>
-      <th data-tooltip="Annual growth in percent for recurring items.">Growth %</th>
-      <th data-tooltip="Apply to all treatments or selected ones.">Applies to</th>
-      <th data-tooltip="Optional note for audit trail and policy briefs.">Notes</th>
-      <th></th>
-    </tr></thead><tbody>`;
-
-  const basisOptions = ["per_ha","total","per_t"];
-  const timingOptions = ["y0_only","y1_only","annual_duration","annual_horizon","custom"];
-
-  for (const a of items){
-    const applies = (a.appliesTo === "all") ? "all" : "selected";
-    html += `<tr>
-      <td class="mono"><input type="checkbox" data-adder="${escapeHtml(a.id)}" data-field="enabled" ${a.enabled ? "checked":""}></td>
-      <td>
-        <select class="tselect" data-adder="${escapeHtml(a.id)}" data-field="kind">
-          <option value="benefit" ${a.kind==="benefit"?"selected":""}>benefit</option>
-          <option value="cost" ${a.kind==="cost"?"selected":""}>cost</option>
-        </select>
-      </td>
-      <td><input class="tinput" style="width:220px" type="text" data-adder="${escapeHtml(a.id)}" data-field="label" value="${escapeHtml(a.label)}"></td>
-      <td><input class="tinput" type="number" step="0.1" data-adder="${escapeHtml(a.id)}" data-field="amount" value="${escapeHtml(String(a.amount))}"></td>
-      <td>
-        <select class="tselect" data-adder="${escapeHtml(a.id)}" data-field="amountBasis">
-          ${basisOptions.map(b=>`<option value="${b}" ${a.amountBasis===b?"selected":""}>${b}</option>`).join("")}
-        </select>
-      </td>
-      <td>
-        <select class="tselect" data-adder="${escapeHtml(a.id)}" data-field="timing">
-          ${timingOptions.map(t=>`<option value="${t}" ${a.timing===t?"selected":""}>${t}</option>`).join("")}
-        </select>
-      </td>
-      <td><input class="tinput" type="number" step="1" data-adder="${escapeHtml(a.id)}" data-field="startYear" value="${escapeHtml(String(a.startYear))}"></td>
-      <td><input class="tinput" type="number" step="1" data-adder="${escapeHtml(a.id)}" data-field="endYear" value="${escapeHtml(String(a.endYear))}"></td>
-      <td><input class="tinput" type="number" step="0.1" data-adder="${escapeHtml(a.id)}" data-field="growthPct" value="${escapeHtml(String(a.growthPct))}"></td>
-      <td>
-        <select class="tselect" data-adder="${escapeHtml(a.id)}" data-field="appliesToMode">
-          <option value="all" ${applies==="all"?"selected":""}>all</option>
-          <option value="selected" ${applies==="selected"?"selected":""}>selected</option>
-        </select>
-      </td>
-      <td><input class="tinput" style="width:220px" type="text" data-adder="${escapeHtml(a.id)}" data-field="notes" value="${escapeHtml(a.notes)}"></td>
-      <td class="mono"><button class="btn btn--ghost" type="button" data-adder-del="${escapeHtml(a.id)}">Remove</button></td>
-    </tr>`;
-
-    // If selected mode, show multi-select row
-    if (applies === "selected"){
-      const selected = Array.isArray(a.appliesTo) ? a.appliesTo : [];
-      html += `<tr>
-        <td></td>
-        <td colspan="10">
-          <div class="muted" style="margin-bottom:6px;">Select treatments:</div>
-          <div style="display:flex; flex-wrap:wrap; gap:8px;">
-            ${tnames.map(n=>{
-              const chk = selected.includes(n);
-              return `<label class="chip" style="display:inline-flex; align-items:center; gap:6px; font-family: var(--mono);">
-                <input type="checkbox" data-adder="${escapeHtml(a.id)}" data-field="appliesToPick" data-tname="${escapeHtml(n)}" ${chk?"checked":""}>
-                ${escapeHtml(n)}
-              </label>`;
-            }).join("")}
+    box.innerHTML = `
+      <div class="grid2">
+        <div class="card soft">
+          <div class="kicker">Dataset</div>
+          <div class="metric">${fmt.format(n)} rows</div>
+          <div class="sub">${fmt.format(c)} columns · ${fmt.format(groups.length)} treatments detected</div>
+        </div>
+        <div class="card soft">
+          <div class="kicker">Auto-detected fields</div>
+          <div class="sub">
+            <div><span class="pill">Treatment</span> ${safeText(state.meta.treatmentKey || '—')}</div>
+            <div><span class="pill">Label</span> ${safeText(state.meta.treatmentLabelKey || '—')}</div>
+            <div><span class="pill">Yield</span> ${safeText(yieldKey)}</div>
+            <div><span class="pill">Costs</span> ${safeText(costKeyText)}</div>
           </div>
-        </td>
-        <td></td>
-      </tr>`;
-    }
-  }
-
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-
-  // Bind changes
-  wrap.querySelectorAll("[data-adder][data-field]").forEach(el => {
-    on(el, "change", (e) => {
-      const id = e.target.getAttribute("data-adder");
-      const field = e.target.getAttribute("data-field");
-      let ad = state.adders.items.find(x => String(x.id) === id);
-      if (!ad){
-        ad = normAdder({id});
-        state.adders.items.push(ad);
-      }
-
-      if (field === "enabled") ad.enabled = e.target.checked;
-      else if (field === "kind") ad.kind = e.target.value === "cost" ? "cost" : "benefit";
-      else if (field === "label") ad.label = e.target.value;
-      else if (field === "amount") ad.amount = Number(e.target.value || 0);
-      else if (field === "amountBasis") ad.amountBasis = e.target.value;
-      else if (field === "timing") ad.timing = e.target.value;
-      else if (field === "startYear") ad.startYear = Math.floor(Number(e.target.value || 0));
-      else if (field === "endYear") ad.endYear = Math.floor(Number(e.target.value || 0));
-      else if (field === "growthPct") ad.growthPct = Number(e.target.value || 0);
-      else if (field === "notes") ad.notes = e.target.value;
-      else if (field === "appliesToMode"){
-        if (e.target.value === "all") ad.appliesTo = "all";
-        else ad.appliesTo = Array.isArray(ad.appliesTo) ? ad.appliesTo : [];
-      } else if (field === "appliesToPick"){
-        const tname = e.target.getAttribute("data-tname");
-        const arr = Array.isArray(ad.appliesTo) ? ad.appliesTo : [];
-        const has = arr.includes(tname);
-        if (e.target.checked && !has) arr.push(tname);
-        if (!e.target.checked && has) ad.appliesTo = arr.filter(x=>x!==tname);
-        else ad.appliesTo = arr;
-      }
-
-      invalidateCache();
-      renderResults();
-      renderCashflows();
-      renderCopilot();
-      // rerender to show selected list when toggling applies mode
-      if (field === "appliesToMode") renderAdders();
-    });
-  });
-
-  wrap.querySelectorAll("[data-adder-del]").forEach(btn => {
-    on(btn, "click", (e) => {
-      const id = e.target.getAttribute("data-adder-del");
-      state.adders.items = state.adders.items.filter(a => String(a.id) !== id);
-      invalidateCache();
-      renderAdders();
-      renderResults();
-      renderCashflows();
-      renderCopilot();
-      toast("Removed item");
-    });
-  });
-}
-
-function renderSimulations(){
-  const wrap = byId("simResultsWrap");
-  if (!wrap) return;
-
-  if (!state.cache.lastSim){
-    wrap.innerHTML = `<div class="muted">Run simulation to see uncertainty results.</div>`;
-    return;
-  }
-
-  const rows = state.cache.lastSim.summary;
-
-  let html = `<table>
-    <thead><tr>
-      <th>Treatment</th>
-      <th>NPV P10</th>
-      <th>NPV P50</th>
-      <th>NPV P90</th>
-      <th>Pr(NPV&gt;0)</th>
-      <th>BCR P50</th>
-      <th>Pr(BCR&gt;1)</th>
-      <th>Pr(best by NPV)</th>
-    </tr></thead><tbody>`;
-
-  for (const r of rows){
-    const badge = r.isBaseline ? ` <span class="badge">Baseline</span>` : "";
-    html += `<tr>
-      <td>${escapeHtml(r.treatment)}${badge}</td>
-      <td class="mono">${escapeHtml(fmtMoney(r.npv_p10,0))}</td>
-      <td class="mono">${escapeHtml(fmtMoney(r.npv_p50,0))}</td>
-      <td class="mono">${escapeHtml(fmtMoney(r.npv_p90,0))}</td>
-      <td class="mono">${escapeHtml(fmtNumber(r.prob_npv_gt_0*100,1))}%</td>
-      <td class="mono">${escapeHtml(fmtNumber(r.bcr_p50,3))}</td>
-      <td class="mono">${escapeHtml(fmtNumber(r.prob_bcr_gt_1*100,1))}%</td>
-      <td class="mono">${escapeHtml(fmtNumber(r.prob_best_by_npv*100,1))}%</td>
-    </tr>`;
-  }
-
-  html += `</tbody></table>`;
-  wrap.innerHTML = html;
-
-  const note = byId("simNote");
-  if (note){
-    const s = state.cache.lastSim.settings;
-    note.textContent = `Simulation ran ${s.draws} draws (${s.distribution}) around: price ±${Math.round(s.pricePct*100)}%, yield mult ±${Math.round(s.yieldMultPct*100)}%, cost mult ±${Math.round(s.costMultPct*100)}%, discount ±${(s.discountPts*100).toFixed(1)} pp, duration ±${s.durationYears} years.`;
-  }
-}
-
-function renderCopilot(){
-  const ta = byId("copilotPrompt");
-  const meta = byId("copilotMeta");
-  if (!ta && !meta) return;
-
-  // If results aren't ready, still produce a scaffold prompt
-  const payload = buildCopilotPayload();
-  const json = JSON.stringify(payload, null, 2);
-
-  if (ta) ta.value = json;
-
-  if (meta){
-    meta.innerHTML = `
-      <div class="muted">
-        Audience: <code>${escapeHtml(state.copilot.audience)}</code> · Tone: <code>${escapeHtml(state.copilot.tone)}</code> · Length: <code>${escapeHtml(state.copilot.length)}</code>
-        · Baseline: <code>${escapeHtml(state.map.baseline || "—")}</code>
+        </div>
       </div>
     `;
   }
-}
 
-/* =========================
-   Charts (simple canvas)
-   ========================= */
-function drawEmpty(canvas, msg){
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0,0,w,h);
-  ctx.fillStyle = "rgba(255,255,255,0.72)";
-  ctx.font = "16px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-  ctx.fillText(msg, 16, 28);
-}
+  function renderPreviewTable() {
+    const wrap = $('#dataPreview');
+    if (!wrap) return;
 
-function drawNpvChart(canvas, cbaList){
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0,0,w,h);
-
-  const metric = state.ui.rankBy;
-  const items = cbaList.slice().map(x => {
-    const v = (metric === "npv") ? x.npv : (metric === "bcr" ? x.bcr : x.roi);
-    return {name:x.name, v, npv:x.npv};
-  });
-
-  items.sort((a,b) => {
-    const av = a.v, bv = b.v;
-    const aBad = !Number.isFinite(av);
-    const bBad = !Number.isFinite(bv);
-    if (aBad && bBad) return a.name.localeCompare(b.name);
-    if (aBad) return 1;
-    if (bBad) return -1;
-    return (bv - av);
-  });
-
-  const values = items.map(x => x.npv).filter(Number.isFinite);
-  const minV = Math.min(0, ...values);
-  const maxV = Math.max(0, ...values);
-
-  const padL = 50, padR = 10, padT = 18, padB = 90;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
-
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(padL, padT);
-  ctx.lineTo(padL, padT + plotH);
-  ctx.lineTo(padL + plotW, padT + plotH);
-  ctx.stroke();
-
-  const n = items.length;
-  const gap = 6;
-  const barW = Math.max(6, (plotW - gap*(n-1)) / n);
-
-  function yScale(v){
-    if (maxV === minV) return padT + plotH/2;
-    return padT + (maxV - v) * (plotH / (maxV - minV));
-  }
-  const y0 = yScale(0);
-
-  for (let i=0; i<n; i++){
-    const x = padL + i*(barW + gap);
-    const v = items[i].npv;
-    const y = yScale(v);
-    const top = Math.min(y, y0);
-    const bh = Math.abs(y0 - y);
-
-    ctx.fillStyle = (items[i].name === state.map.baseline) ? "rgba(167,243,208,0.55)" : "rgba(125,211,252,0.55)";
-    ctx.fillRect(x, top, barW, bh);
-
-    ctx.save();
-    ctx.translate(x + barW/2, padT + plotH + 10);
-    ctx.rotate(-Math.PI/3);
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas";
-    ctx.textAlign = "right";
-    ctx.fillText(items[i].name.length > 18 ? (items[i].name.slice(0,18)+"…") : items[i].name, 0, 0);
-    ctx.restore();
-  }
-
-  ctx.fillStyle = "rgba(255,255,255,0.86)";
-  ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto";
-  ctx.fillText(`NPV chart (rank by ${metric.toUpperCase()})`, 16, 18);
-}
-
-function drawCashflowChart(canvas, cf){
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0,0,w,h);
-
-  const T = cf.net.length - 1;
-  const values = cf.net.slice(0).filter(Number.isFinite);
-  const minV = Math.min(0, ...values);
-  const maxV = Math.max(0, ...values);
-
-  const padL = 50, padR = 10, padT = 18, padB = 50;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
-
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(padL, padT);
-  ctx.lineTo(padL, padT + plotH);
-  ctx.lineTo(padL + plotW, padT + plotH);
-  ctx.stroke();
-
-  function yScale(v){
-    if (maxV === minV) return padT + plotH/2;
-    return padT + (maxV - v) * (plotH / (maxV - minV));
-  }
-  const y0 = yScale(0);
-
-  const n = T + 1;
-  const gap = 6;
-  const barW = Math.max(8, (plotW - gap*(n-1)) / n);
-
-  for (let i=0; i<n; i++){
-    const x = padL + i*(barW + gap);
-    const v = cf.net[i];
-    const y = yScale(v);
-    const top = Math.min(y, y0);
-    const bh = Math.abs(y0 - y);
-
-    ctx.fillStyle = (v >= 0) ? "rgba(167,243,208,0.55)" : "rgba(252,165,165,0.45)";
-    ctx.fillRect(x, top, barW, bh);
-
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas";
-    ctx.textAlign = "center";
-    ctx.fillText(String(i), x + barW/2, padT + plotH + 16);
-  }
-
-  ctx.fillStyle = "rgba(255,255,255,0.86)";
-  ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto";
-  ctx.fillText(`Net cashflow by year: ${cf.name}`, 16, 18);
-}
-
-/* =========================
-   Sensitivity
-   ========================= */
-function computeMetric(cf, metric){
-  if (metric === "npv") return cf.npv;
-  if (metric === "bcr") return cf.bcr;
-  if (metric === "roi") return cf.roi;
-  return cf.npv;
-}
-
-function cloneAssumptions(){
-  return JSON.parse(JSON.stringify(state.assumptions));
-}
-
-function runSensitivity(){
-  const treatment = byId("sensTreatment")?.value;
-  const metric = byId("sensMetric")?.value || "npv";
-  if (!treatment) return toast("Select a treatment first");
-
-  const pricePct = Number(byId("sensPricePct")?.value || 0) / 100;
-  const costPct = Number(byId("sensCostPct")?.value || 0) / 100;
-  const yieldPct = Number(byId("sensYieldPct")?.value || 0) / 100;
-  const discPts = Number(byId("sensDiscountPts")?.value || 0);
-  const durDelta = Math.floor(Number(byId("sensDurationDelta")?.value || 0));
-
-  const baseAssump = cloneAssumptions();
-  const baseOv = JSON.parse(JSON.stringify(state.treatmentOverrides));
-
-  function evalWith(modFn){
-    const savedA = state.assumptions;
-    const savedO = state.treatmentOverrides;
-
-    state.assumptions = cloneAssumptions();
-    state.treatmentOverrides = JSON.parse(JSON.stringify(baseOv));
-
-    modFn();
-
-    invalidateCache();
-    const cf = buildCashflowsForTreatment(treatment);
-
-    state.assumptions = savedA;
-    state.treatmentOverrides = savedO;
-    invalidateCache();
-
-    return cf ? computeMetric(cf, metric) : NaN;
-  }
-
-  const baseVal = evalWith(() => {});
-
-  const res = [
-    {
-      driver: "Price",
-      low: evalWith(() => { state.assumptions.priceYear1 = baseAssump.priceYear1 * (1 - pricePct); }),
-      base: baseVal,
-      high: evalWith(() => { state.assumptions.priceYear1 = baseAssump.priceYear1 * (1 + pricePct); })
-    },
-    {
-      driver: "Incremental cost multiplier",
-      low: evalWith(() => { state.treatmentOverrides[treatment].costMult = (baseOv[treatment].costMult || 1) * (1 - costPct); }),
-      base: baseVal,
-      high: evalWith(() => { state.treatmentOverrides[treatment].costMult = (baseOv[treatment].costMult || 1) * (1 + costPct); })
-    },
-    {
-      driver: "Incremental yield multiplier",
-      low: evalWith(() => { state.treatmentOverrides[treatment].yieldMult = (baseOv[treatment].yieldMult || 1) * (1 - yieldPct); }),
-      base: baseVal,
-      high: evalWith(() => { state.treatmentOverrides[treatment].yieldMult = (baseOv[treatment].yieldMult || 1) * (1 + yieldPct); })
-    },
-    {
-      driver: "Discount rate",
-      low: evalWith(() => { state.assumptions.discountRatePct = Math.max(0, baseAssump.discountRatePct - discPts); }),
-      base: baseVal,
-      high: evalWith(() => { state.assumptions.discountRatePct = Math.max(0, baseAssump.discountRatePct + discPts); })
-    },
-    {
-      driver: "Effect duration",
-      low: evalWith(() => { state.assumptions.effectDurationYears = Math.max(1, baseAssump.effectDurationYears - durDelta); }),
-      base: baseVal,
-      high: evalWith(() => { state.assumptions.effectDurationYears = Math.max(1, baseAssump.effectDurationYears + durDelta); })
+    if (!state.rows.length) {
+      wrap.innerHTML = '';
+      return;
     }
-  ];
 
-  const payload = {
-    treatment,
-    metric,
-    inputs: {pricePct, costPct, yieldPct, discPts, durDelta},
-    rows: res
-  };
+    const cols = state.columns.slice(0, 10);
+    const rows = state.rows.slice(0, 8);
 
-  state.cache.lastSensitivity = payload;
-  renderSensitivity();
-  renderCopilot();
-  toast("Sensitivity updated");
-}
+    const thead = cols.map((c) => `<th title="${safeText(c)}">${safeText(c)}</th>`).join('');
+    const tbody = rows
+      .map((r) => `<tr>${cols.map((c) => `<td>${safeText(r[c] ?? '')}</td>`).join('')}</tr>`)
+      .join('');
 
-function sensitivityTableHtml(payload){
-  const metric = payload.metric;
-  const isRatio = (metric === "bcr" || metric === "roi");
-
-  let html = `<table>
-    <thead><tr>
-      <th>Driver</th>
-      <th>Low</th>
-      <th>Base</th>
-      <th>High</th>
-    </tr></thead><tbody>`;
-
-  for (const r of payload.rows){
-    const f = (x) => isRatio ? fmtNumber(x, 3) : fmtMoney(x, 0);
-    html += `<tr>
-      <td>${escapeHtml(r.driver)}</td>
-      <td class="mono">${escapeHtml(f(r.low))}</td>
-      <td class="mono">${escapeHtml(f(r.base))}</td>
-      <td class="mono">${escapeHtml(f(r.high))}</td>
-    </tr>`;
+    wrap.innerHTML = `
+      <div class="tableWrap">
+        <table class="table">
+          <thead><tr>${thead}</tr></thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>
+      <div class="muted mt8">Preview shows first 10 columns and first 8 rows for a quick check.</div>
+    `;
   }
 
-  html += `</tbody></table>`;
-  return html;
-}
-
-/* =========================
-   Exports
-   ========================= */
-function toCsv(rows, columns){
-  const cols = columns || (rows[0] ? Object.keys(rows[0]) : []);
-  const esc = (v) => {
-    const s = (v === null || v === undefined) ? "" : String(v);
-    if (/[",\n]/.test(s)) return `"${s.replaceAll('"','""')}"`;
-    return s;
-  };
-  const lines = [];
-  lines.push(cols.map(esc).join(","));
-  for (const r of rows){
-    lines.push(cols.map(c => esc(r[c])).join(","));
+  function renderAssumptions() {
+    // Inputs already exist; just reflect state if needed
+    $('#areaHa').value = String(state.assumptions.areaHa);
+    $('#horizonYears').value = String(state.assumptions.horizonYears);
+    $('#discountRate').value = String(Math.round(state.assumptions.discountRate * 1000) / 10);
+    $('#grainPrice').value = String(state.assumptions.grainPrice);
+    $('#priceGrowth').value = String(Math.round(state.assumptions.priceGrowth * 1000) / 10);
+    $('#yieldGrowth').value = String(Math.round(state.assumptions.yieldGrowth * 1000) / 10);
+    $('#costGrowth').value = String(Math.round(state.assumptions.costGrowth * 1000) / 10);
   }
-  return lines.join("\n");
-}
 
-function downloadBlob(filename, blob){
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+  function renderAddList(kind) {
+    const listEl = kind === 'benefit' ? $('#addBenefitsList') : $('#addCostsList');
+    if (!listEl) return;
 
-function downloadText(filename, text, mime="text/plain"){
-  downloadBlob(filename, new Blob([text], {type: mime}));
-}
-
-function exportVerticalCsv(){
-  const cba = buildCbaAllTreatments();
-  if (!cba.length) return toast("Nothing to export");
-  const metric = state.ui.rankBy;
-  const scored = cba.map(x => ({name:x.name, v: (metric==="npv"?x.npv:(metric==="bcr"?x.bcr:x.roi))}))
-    .sort((a,b)=> {
-      const aBad = !Number.isFinite(a.v);
-      const bBad = !Number.isFinite(b.v);
-      if (aBad && bBad) return a.name.localeCompare(b.name);
-      if (aBad) return 1;
-      if (bBad) return -1;
-      return (b.v - a.v);
-    });
-  const rankMap = {};
-  for (let i=0; i<scored.length; i++) rankMap[scored[i].name] = i+1;
-
-  const indicators = [
-    {Indicator:"PV benefits", key:"pvBenefits"},
-    {Indicator:"PV costs", key:"pvCosts"},
-    {Indicator:"NPV", key:"npv"},
-    {Indicator:"BCR", key:"bcr"},
-    {Indicator:"ROI", key:"roi"},
-    {Indicator:`Rank (by ${metric.toUpperCase()})`, key:"rank"}
-  ];
-
-  const cols = ["Indicator", ...cba.map(x => x.name)];
-  const rows = indicators.map(ind => {
-    const obj = {Indicator: ind.Indicator};
-    for (const t of cba){
-      let v = "";
-      if (ind.key === "rank") v = rankMap[t.name] || "";
-      else v = t[ind.key];
-      obj[t.name] = v;
+    const items = kind === 'benefit' ? state.addBenefits : state.addCosts;
+    if (!items.length) {
+      listEl.innerHTML = `<div class="muted">None added.</div>`;
+      return;
     }
-    return obj;
-  });
 
-  downloadText("cba_vertical.csv", toCsv(rows, cols), "text/csv");
-}
+    listEl.innerHTML = items
+      .map((it) => {
+        const unitText = it.unit === 'per_ha' ? 'per ha' : 'total';
+        const modeText = it.mode === 'annual' ? 'annual' : 'one-off';
+        const years = it.mode === 'oneoff'
+          ? `Year ${it.startYear}`
+          : `Years ${it.startYear}–${it.endYear}`;
+        return `
+          <div class="rowItem">
+            <div class="rowItem__main">
+              <div class="rowItem__title">${safeText(it.name || '(Untitled)')}</div>
+              <div class="rowItem__meta">
+                <span class="badge">${safeText(modeText)}</span>
+                <span class="badge">${safeText(unitText)}</span>
+                <span class="badge">${safeText(years)}</span>
+              </div>
+            </div>
+            <div class="rowItem__value">${money0(asNumber(it.value))}</div>
+            <button class="btn btn--ghost" data-remove="${safeText(it.id)}" aria-label="Remove">Remove</button>
+          </div>
+        `;
+      })
+      .join('');
 
-function exportTrialSummaryCsv(){
-  const sum = buildTrialSummary();
-  if (!sum.length) return toast("Nothing to export");
-  const cols = ["name","n","yield_mean","cost_mean","delta_yield","delta_cost"];
-  downloadText("trial_summary.csv", toCsv(sum, cols), "text/csv");
-}
-
-function exportStateJson(){
-  const payload = {
-    source: state.source,
-    columns: state.columns,
-    map: state.map,
-    assumptions: state.assumptions,
-    treatmentOverrides: state.treatmentOverrides,
-    adders: state.adders,
-    sim: state.sim,
-    copilot: state.copilot,
-    raw: state.raw
-  };
-  downloadText("tool_state.json", JSON.stringify(payload, null, 2), "application/json");
-}
-
-function exportSensitivityXlsx(){
-  if (!state.cache.lastSensitivity) return toast("Run sensitivity first");
-  if (!window.XLSX) return toast("XLSX library missing");
-
-  const wb = XLSX.utils.book_new();
-  const s = state.cache.lastSensitivity;
-
-  const meta = [
-    {key:"Treatment", value:s.treatment},
-    {key:"Metric", value:s.metric},
-    {key:"Price change +/-", value:(s.inputs.pricePct*100)+"%"},
-    {key:"Cost mult change +/-", value:(s.inputs.costPct*100)+"%"},
-    {key:"Yield mult change +/-", value:(s.inputs.yieldPct*100)+"%"},
-    {key:"Discount rate change +/- (pp)", value:s.inputs.discPts},
-    {key:"Duration change +/- (years)", value:s.inputs.durDelta}
-  ];
-
-  const wsMeta = XLSX.utils.json_to_sheet(meta);
-  XLSX.utils.book_append_sheet(wb, wsMeta, "Sensitivity_Meta");
-
-  const ws = XLSX.utils.json_to_sheet(s.rows);
-  XLSX.utils.book_append_sheet(wb, ws, "Sensitivity");
-
-  const out = XLSX.write(wb, {bookType:"xlsx", type:"array"});
-  downloadBlob("sensitivity.xlsx", new Blob([out], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-}
-
-function exportFullWorkbookXlsx(){
-  if (!window.XLSX) return toast("XLSX library missing");
-  if (!state.raw.length) return toast("Load data first");
-
-  const wb = XLSX.utils.book_new();
-
-  const assumpRows = Object.keys(state.assumptions).map(k => ({key:k, value: state.assumptions[k]}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(assumpRows), "Assumptions");
-
-  const trial = buildTrialSummary();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trial), "TrialMeans");
-
-  const cba = buildCbaAllTreatments();
-  if (cba.length){
-    const metric = state.ui.rankBy;
-    const scored = cba.map(x => ({name:x.name, v: (metric==="npv"?x.npv:(metric==="bcr"?x.bcr:x.roi))}))
-      .sort((a,b)=> {
-        const aBad = !Number.isFinite(a.v);
-        const bBad = !Number.isFinite(b.v);
-        if (aBad && bBad) return a.name.localeCompare(b.name);
-        if (aBad) return 1;
-        if (bBad) return -1;
-        return (b.v - a.v);
+    $$('button[data-remove]', listEl).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-remove');
+        if (kind === 'benefit') state.addBenefits = state.addBenefits.filter((x) => x.id !== id);
+        else state.addCosts = state.addCosts.filter((x) => x.id !== id);
+        renderAddList(kind);
+        recomputeAndRender();
       });
-    const rankMap = {};
-    for (let i=0; i<scored.length; i++) rankMap[scored[i].name] = i+1;
+    });
+  }
 
-    const indicators = [
-      {Indicator:"PV benefits", key:"pvBenefits"},
-      {Indicator:"PV costs", key:"pvCosts"},
-      {Indicator:"NPV", key:"npv"},
-      {Indicator:"BCR", key:"bcr"},
-      {Indicator:"ROI", key:"roi"},
-      {Indicator:`Rank (by ${metric.toUpperCase()})`, key:"rank"}
-    ];
-    const cols = ["Indicator", ...cba.map(x => x.name)];
-    const rows = indicators.map(ind => {
-      const obj = {Indicator: ind.Indicator};
-      for (const t of cba){
-        obj[t.name] = (ind.key === "rank") ? (rankMap[t.name] || "") : t[ind.key];
+  function renderResultsTable() {
+    const wrap = $('#resultsTable');
+    const wrapDelta = $('#resultsDeltaTable');
+    const callout = $('#resultsCallout');
+    if (!wrap || !wrapDelta || !callout) return;
+
+    if (!state.results) {
+      wrap.innerHTML = '';
+      wrapDelta.innerHTML = '';
+      callout.innerHTML = `<div class="muted">Load data and run analysis to see results.</div>`;
+      return;
+    }
+
+    const { columns, rows, deltas, controlId, raw } = state.results;
+    const control = columns.find((c) => c.id === controlId);
+
+    // Callout summary
+    const ranked = Array.from(raw.metricsById.values()).sort((a, b) => b.npv - a.npv);
+    const best = ranked[0];
+    const worst = ranked[ranked.length - 1];
+    callout.innerHTML = `
+      <div class="callout">
+        <div class="callout__title">Quick read</div>
+        <div class="callout__body">
+          <div><span class="pill">Control</span> ${safeText(control?.label || '—')}</div>
+          <div class="mt6"><span class="pill">Highest NPV</span> ${safeText(best?.label || '—')} · ${money0(best?.npv)}</div>
+          <div class="mt6"><span class="pill">Lowest NPV</span> ${safeText(worst?.label || '—')} · ${money0(worst?.npv)}</div>
+        </div>
+      </div>
+    `;
+
+    const head = `
+      <tr>
+        <th class="stickyLeft">Economic indicator</th>
+        ${columns
+          .map(
+            (c) => `<th class="${c.isControl ? 'isControl' : ''}">
+              <div class="thCol">
+                <div class="thTitle">${safeText(c.label)}</div>
+                ${c.isControl ? `<div class="thSub">Control</div>` : `<div class="thSub">Treatment</div>`}
+              </div>
+            </th>`
+          )
+          .join('')}
+      </tr>
+    `;
+
+    const body = rows
+      .map((r) => {
+        const cells = columns
+          .map((c) => {
+            const v = r.cells[c.id];
+            const isHighlight = r.key === 'npv';
+            return `<td class="${isHighlight ? 'hi' : ''}">${safeText(r.format(v))}</td>`;
+          })
+          .join('');
+        return `<tr><td class="stickyLeft">${safeText(r.label)}</td>${cells}</tr>`;
+      })
+      .join('');
+
+    wrap.innerHTML = `
+      <div class="tableWrap">
+        <table class="table table--wide">
+          <thead>${head}</thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    `;
+
+    const bodyDelta = deltas
+      .map((r) => {
+        const cells = columns
+          .map((c) => {
+            const v = r.cells[c.id];
+            const cls = c.isControl ? 'mutedCell' : '';
+            return `<td class="${cls}">${safeText(r.format(v))}</td>`;
+          })
+          .join('');
+        return `<tr><td class="stickyLeft">${safeText(r.label)}</td>${cells}</tr>`;
+      })
+      .join('');
+
+    wrapDelta.innerHTML = `
+      <div class="tableWrap">
+        <table class="table table--wide">
+          <thead>
+            <tr>
+              <th class="stickyLeft">Compared with control</th>
+              ${columns.map((c) => `<th class="${c.isControl ? 'isControl' : ''}">${safeText(c.label)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>${bodyDelta}</tbody>
+        </table>
+      </div>
+      <div class="muted mt8">Δ rows show each treatment relative to the control. The control column is shown for alignment.</div>
+    `;
+  }
+
+  function renderSimulations() {
+    const box = $('#simSummary');
+    const table = $('#simTable');
+    const canvas = $('#simChart');
+    if (!box || !table || !canvas) return;
+
+    if (!state.simulations) {
+      box.innerHTML = `<div class="muted">Run simulations to see uncertainty ranges.</div>`;
+      table.innerHTML = '';
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    const { meta, byTreatment } = state.simulations;
+
+    box.innerHTML = `
+      <div class="card soft">
+        <div class="kicker">Simulation settings</div>
+        <div class="sub">
+          <div><span class="pill">Draws</span> ${fmt.format(meta.draws)}</div>
+          <div class="mt6"><span class="pill">Price uncertainty</span> ${pct1(meta.priceSD)}</div>
+          <div class="mt6"><span class="pill">Yield uncertainty</span> ${pct1(meta.yieldSD)}</div>
+          <div class="mt6"><span class="pill">Cost uncertainty</span> ${pct1(meta.costSD)}</div>
+        </div>
+      </div>
+    `;
+
+    const rows = Object.values(byTreatment);
+    const head = `
+      <tr>
+        <th>Treatment</th>
+        <th>NPV (P10)</th>
+        <th>NPV (Median)</th>
+        <th>NPV (P90)</th>
+        <th>Pr(NPV &gt; 0)</th>
+        <th>BCR (Median)</th>
+      </tr>
+    `;
+    const body = rows
+      .map((r) => `
+        <tr>
+          <td>${safeText(r.label)}</td>
+          <td>${money0(r.npv.p10)}</td>
+          <td class="hi">${money0(r.npv.p50)}</td>
+          <td>${money0(r.npv.p90)}</td>
+          <td>${pct1(r.npv.probPositive)}</td>
+          <td>${num2(r.bcr.p50)}</td>
+        </tr>
+      `)
+      .join('');
+
+    table.innerHTML = `
+      <div class="tableWrap">
+        <table class="table">
+          <thead>${head}</thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    `;
+
+    // Chart: histogram for the currently selected treatment (default control)
+    const sel = $('#simTreatmentSelect');
+    if (sel) {
+      const selectedId = sel.value;
+      const t = byTreatment[selectedId] ? selectedId : Object.keys(byTreatment)[0];
+      // We didn't store draws arrays for memory reasons; recreate a representative histogram from summary is not possible.
+      // Instead, re-run small on-demand draws for the chart only.
+      const small = 1200;
+      const base = state.results.raw.metricsById.get(t);
+      if (base) {
+        const npvs = [];
+        for (let i = 0; i < small; i++) {
+          const priceMult = Math.max(0, 1 + meta.priceSD * randn());
+          const yieldMult = Math.max(0, 1 + meta.yieldSD * randn());
+          const costMult = Math.max(0, 1 + meta.costSD * randn());
+          const perHa = {
+            yieldTHa: (base.perHa.yieldTHa || 0) * yieldMult,
+            costPerHa: (base.perHa.costPerHa || 0) * costMult
+          };
+          const assumptions = { ...state.assumptions, grainPrice: state.assumptions.grainPrice * priceMult };
+          const pv = computeTreatmentPV(perHa, assumptions, state.addBenefits, state.addCosts);
+          npvs.push(pv.npv);
+        }
+        renderHistogram(canvas, npvs, 28);
       }
+    }
+  }
+
+  function renderSimTreatmentSelect() {
+    const sel = $('#simTreatmentSelect');
+    if (!sel || !state.results) return;
+    const { columns, controlId } = state.results;
+    sel.innerHTML = columns
+      .map((c) => `<option value="${safeText(c.id)}" ${c.id === controlId ? 'selected' : ''}>${safeText(c.label)}</option>`)
+      .join('');
+    sel.addEventListener('change', () => renderSimulations());
+  }
+
+  function buildCopilotPack() {
+    if (!state.results) return null;
+
+    const { columns, rows, deltas, controlId } = state.results;
+    const control = columns.find((c) => c.id === controlId);
+
+    const tableRows = rows.map((r) => {
+      const obj = { indicator: r.label };
+      for (const c of columns) obj[c.label] = r.key === 'rank' ? r.cells[c.id] : r.cells[c.id];
       return obj;
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows, {header: cols}), "CBA_Vertical");
-  }
 
-  // Cashflows (all treatments)
-  const cashRows = [];
-  const T = Math.max(1, Math.floor(Number(state.assumptions.horizonYears) || 1));
-  for (const t of cba){
-    for (let y=0; y<=T; y++){
-      cashRows.push({
-        treatment: t.name,
-        year: y,
-        price: (y===0 ? "" : priceForYear(y)),
-        benefit_factor: (y===0 ? "" : benefitFactorByYear(y)),
-        benefits: t.benefits[y],
-        costs: t.costs[y],
-        net: t.net[y],
-        discount_factor: discountFactor(y),
-        pv_net: t.net[y] * discountFactor(y)
-      });
-    }
-  }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cashRows), "Cashflows_All");
-
-  // Additional adders
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.adders.items.map(normAdder)), "Adders");
-
-  // Sensitivity (last run)
-  if (state.cache.lastSensitivity){
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.cache.lastSensitivity.rows), "Sensitivity_Last");
-  }
-
-  // Simulation (last run)
-  if (state.cache.lastSim){
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.cache.lastSim.summary), "Simulation_Last");
-  }
-
-  // Copilot prompt
-  const cp = buildCopilotPayload();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{json: JSON.stringify(cp)}]), "CopilotPrompt");
-
-  // Raw data
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.raw), "RawData");
-
-  const out = XLSX.write(wb, {bookType:"xlsx", type:"array"});
-  downloadBlob("farming_cba_tool_output.xlsx", new Blob([out], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-}
-
-/* =========================
-   Events
-   ========================= */
-function bindEvents(){
-  // Tabs (existing + new)
-  $$(".tab").forEach(btn => on(btn, "click", () => setActiveTab(btn.dataset.tab)));
-  bindTabKeyboardNav();
-
-  // Import
-  on(byId("fileInput"), "change", async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    try{
-      const buf = await f.arrayBuffer();
-      await importExcelArrayBuffer(buf, f.name);
-      setActiveTab("mapping");
-    } catch(err){
-      console.error(err);
-      toast(`Import failed: ${err.message || err}`);
-    }
-  });
-
-  on(byId("btnLoadBundledXlsx"), "click", async () => {
-    try{
-      const ok = await tryLoadBundled();
-      if (!ok) toast("Bundled XLSX not found. Use Import or embedded sample.");
-      else setActiveTab("mapping");
-    } catch(err){
-      console.error(err);
-      toast(`Bundled load failed: ${err.message || err}`);
-    }
-  });
-
-  on(byId("btnLoadEmbedded"), "click", () => {
-    loadEmbedded();
-    setActiveTab("mapping");
-  });
-
-  on(byId("btnReset"), "click", resetApp);
-
-  on(byId("btnGoMapping"), "click", () => setActiveTab("mapping"));
-  on(byId("btnGoResults"), "click", () => setActiveTab("results"));
-  on(byId("btnGoAssumptions"), "click", () => setActiveTab("assumptions"));
-  on(byId("btnGoImport"), "click", () => setActiveTab("import"));
-  on(byId("btnGoResults2"), "click", () => setActiveTab("results"));
-
-  // Mapping selectors
-  on(byId("mapTreatment"), "change", (e) => {
-    state.map.treatment = e.target.value;
-    const d = detectDefaultMappings(state.raw, state.columns);
-    initTreatmentOverrides();
-    state.map.baseline = d.baseline || state.map.baseline;
-    invalidateCache();
-    renderAll();
-  });
-
-  on(byId("mapBaseline"), "change", (e) => {
-    state.map.baseline = e.target.value;
-    if (state.treatmentOverrides[state.map.baseline]){
-      state.treatmentOverrides[state.map.baseline].enabled = true;
-      state.treatmentOverrides[state.map.baseline].adoption = 1;
-    }
-    invalidateCache();
-    renderAll();
-  });
-
-  on(byId("mapYield"), "change", (e) => {
-    state.map.yield = e.target.value || null;
-    invalidateCache();
-    renderAll();
-  });
-
-  on(byId("mapCost"), "change", (e) => {
-    state.map.cost = e.target.value || null;
-    invalidateCache();
-    renderAll();
-  });
-
-  on(byId("mapOptional1"), "change", (e) => {
-    state.map.optional1 = e.target.value || null;
-    renderAll();
-  });
-
-  // Assumptions inputs (guarded)
-  const bindAssump = (id, key, parser=(x)=>x) => {
-    on(byId(id), "input", (e) => {
-      state.assumptions[key] = parser(e.target.value);
-      invalidateCache();
-      renderAll();
+    const deltaRows = deltas.map((r) => {
+      const obj = { indicator: r.label };
+      for (const c of columns) obj[c.label] = r.cells[c.id];
+      return obj;
     });
-  };
 
-  bindAssump("assumpArea", "areaHa", (v)=>Number(v));
-  bindAssump("assumpHorizon", "horizonYears", (v)=>Math.max(1, Math.floor(Number(v||1))));
-  bindAssump("assumpDiscount", "discountRatePct", (v)=>Math.max(0, Number(v)));
-  bindAssump("assumpPrice", "priceYear1", (v)=>Math.max(0, Number(v)));
-  bindAssump("assumpPriceGrowth", "priceGrowthPct", (v)=>Number(v));
-
-  on(byId("assumpYieldScale"), "change", (e)=>{ state.assumptions.yieldScale = Number(e.target.value||1); invalidateCache(); renderAll(); });
-  on(byId("assumpCostScale"), "change", (e)=>{ state.assumptions.costScale = Number(e.target.value||1); invalidateCache(); renderAll(); });
-
-  bindAssump("assumpBenefitStart", "benefitStartYear", (v)=>Math.max(1, Math.floor(Number(v||1))));
-  bindAssump("assumpDuration", "effectDurationYears", (v)=>Math.max(1, Math.floor(Number(v||1))));
-  on(byId("assumpDecay"), "change", (e)=>{ state.assumptions.decay = e.target.value; invalidateCache(); renderAll(); });
-  bindAssump("assumpHalfLife", "halfLifeYears", (v)=>Math.max(0.1, Number(v||2)));
-  on(byId("assumpCostTimingDefault"), "change", (e)=>{ state.assumptions.costTimingDefault = e.target.value; invalidateCache(); renderAll(); });
-
-  on(byId("btnResetAssumptions"), "click", () => {
-    state.assumptions = {
-      areaHa: 100,
-      horizonYears: 10,
-      discountRatePct: 7,
-      priceYear1: 450,
-      priceGrowthPct: 0,
-      yieldScale: 1,
-      costScale: 1,
-      benefitStartYear: 1,
-      effectDurationYears: 5,
-      decay: "linear",
-      halfLifeYears: 2,
-      costTimingDefault: "y1_only"
+    const pack = {
+      tool: 'Farming CBA Decision Tool 2',
+      assumptions: { ...state.assumptions },
+      control: { id: controlId, label: control?.label || null },
+      indicators: rows.map((r) => r.label),
+      treatments: columns.map((c) => ({ id: c.id, label: c.label, isControl: c.isControl })),
+      results: tableRows,
+      deltasVsControl: deltaRows,
+      additionalBenefits: state.addBenefits,
+      additionalCosts: state.addCosts,
+      notes: {
+        interpretation: [
+          'PV Benefits and PV Costs are discounted over the chosen horizon using the chosen discount rate.',
+          'NPV = PV Benefits − PV Costs.',
+          'BCR = PV Benefits ÷ PV Costs.',
+          'ROI = NPV ÷ PV Costs.',
+          'Δ rows compare each option to the control.'
+        ]
+      }
     };
-    invalidateCache();
-    renderAll();
-    toast("Assumptions reset");
-  });
 
-  // Results controls
-  on(byId("resultMetric"), "change", (e)=>{ state.ui.rankBy = e.target.value; renderResults(); renderCopilot(); });
-  on(byId("resultView"), "change", (e)=>{ state.ui.view = e.target.value; invalidateCache(); renderAll(); });
+    const prompt = [
+      'Write a detailed policy brief using the JSON provided.',
+      'Audience: farmers, policy makers, and researchers. Use plain language but keep technical accuracy.',
+      'Requirements:',
+      '1) Start with a short executive summary and then a results narrative.',
+      '2) Explain what PV Benefits, PV Costs, NPV, BCR, and ROI mean in practical terms.',
+      '3) Compare each treatment to the control explicitly using the Δ rows (what changes and why).',
+      '4) Identify the main drivers of PV Benefits and PV Costs (yield and costs) and how assumptions (price, discount rate, horizon) influence results.',
+      '5) Provide a clean table (Word-ready) that mirrors the indicators-as-rows, treatments-as-columns layout.',
+      '6) Add a short “How to improve performance” section for options with low BCR or negative NPV (e.g., reduce costs, lift yield, improve price, adjust practices), framed as options.',
+      '7) If simulations are provided, summarise uncertainty and probability NPV>0.',
+      'Use headings and short paragraphs. Avoid jargon where possible.'
+    ].join('\n');
 
-  on(byId("btnGoCashflows"), "click", ()=> setActiveTab("cashflows"));
-  on(byId("cashflowTreatment"), "change", ()=>{ renderCashflows(); renderCopilot(); });
-  on(byId("btnBackToResults"), "click", ()=> setActiveTab("results"));
+    // Word-ready markdown tables
+    const colLabels = columns.map((c) => c.label);
+    const mdTable = (() => {
+      const header = `| Economic indicator | ${colLabels.join(' | ')} |`;
+      const sep = `|---|${colLabels.map(() => '---:').join('|')}|`;
+      const lines = rows.map((r) => {
+        const vals = columns.map((c) => {
+          const v = r.cells[c.id];
+          return r.key === 'bcr' || r.key === 'roi' ? num2(v) : r.key === 'rank' ? (isFinite(v) ? String(v) : '—') : money0(v);
+        });
+        return `| ${r.label} | ${vals.join(' | ')} |`;
+      });
+      return [header, sep, ...lines].join('\n');
+    })();
 
-  // Sensitivity
-  on(byId("btnRunSensitivity"), "click", runSensitivity);
-  on(byId("btnResetSensitivity"), "click", () => {
-    if (byId("sensPricePct")) byId("sensPricePct").value = 10;
-    if (byId("sensCostPct")) byId("sensCostPct").value = 10;
-    if (byId("sensYieldPct")) byId("sensYieldPct").value = 10;
-    if (byId("sensDiscountPts")) byId("sensDiscountPts").value = 2;
-    if (byId("sensDurationDelta")) byId("sensDurationDelta").value = 2;
-    toast("Sensitivity inputs reset");
-  });
-  on(byId("btnSensitivityExportXlsx"), "click", exportSensitivityXlsx);
+    const mdDelta = (() => {
+      const header = `| Δ vs control | ${colLabels.join(' | ')} |`;
+      const sep = `|---|${colLabels.map(() => '---:').join('|')}|`;
+      const lines = deltas.map((r) => {
+        const vals = columns.map((c) => money0(r.cells[c.id]));
+        return `| ${r.label} | ${vals.join(' | ')} |`;
+      });
+      return [header, sep, ...lines].join('\n');
+    })();
 
-  // Export
-  on(byId("btnExportXlsx"), "click", exportFullWorkbookXlsx);
-  on(byId("btnExportVerticalCsv"), "click", exportVerticalCsv);
-  on(byId("btnExportTrialSummaryCsv"), "click", exportTrialSummaryCsv);
-  on(byId("btnExportStateJson"), "click", exportStateJson);
+    return { pack, prompt, mdTable, mdDelta };
+  }
 
-  // Adders controls (optional)
-  on(byId("btnAddBenefitAdder"), "click", () => {
-    state.adders.items.push(normAdder({kind:"benefit", label:"New benefit", amount:0, amountBasis:"per_ha", timing:"annual_duration", startYear:1, endYear: state.assumptions.effectDurationYears, enabled:true, appliesTo:"all"}));
-    invalidateCache();
-    renderAdders();
-    renderResults();
-    renderCashflows();
-    renderCopilot();
-  });
-  on(byId("btnAddCostAdder"), "click", () => {
-    state.adders.items.push(normAdder({kind:"cost", label:"New cost", amount:0, amountBasis:"per_ha", timing:"annual_duration", startYear:1, endYear: state.assumptions.effectDurationYears, enabled:true, appliesTo:"all"}));
-    invalidateCache();
-    renderAdders();
-    renderResults();
-    renderCashflows();
-    renderCopilot();
-  });
-  on(byId("btnClearAdders"), "click", () => {
-    state.adders.items = [];
-    invalidateCache();
-    renderAdders();
-    renderResults();
-    renderCashflows();
-    renderCopilot();
-    toast("Cleared additional items");
-  });
+  function renderCopilot() {
+    const box = $('#copilotBox');
+    const promptEl = $('#copilotPrompt');
+    const jsonEl = $('#copilotJSON');
+    const mdEl = $('#copilotMD');
+    if (!box || !promptEl || !jsonEl || !mdEl) return;
 
-  // Simulation controls (optional)
-  on(byId("btnRunSim"), "click", () => {
-    // pull settings from UI if present
-    if (byId("simDraws")) state.sim.draws = Math.max(50, Math.floor(Number(byId("simDraws").value || state.sim.draws)));
-    if (byId("simSeed")) state.sim.seed = Math.floor(Number(byId("simSeed").value || state.sim.seed));
-    if (byId("simPricePct")) state.sim.pricePct = Math.max(0, Number(byId("simPricePct").value || 0) / 100);
-    if (byId("simYieldMultPct")) state.sim.yieldMultPct = Math.max(0, Number(byId("simYieldMultPct").value || 0) / 100);
-    if (byId("simCostMultPct")) state.sim.costMultPct = Math.max(0, Number(byId("simCostMultPct").value || 0) / 100);
-    if (byId("simDiscountPts")) state.sim.discountPts = Math.max(0, Number(byId("simDiscountPts").value || 0) / 100);
-    if (byId("simDurationYears")) state.sim.durationYears = Math.max(0, Math.floor(Number(byId("simDurationYears").value || 0)));
-    if (byId("simDistribution")) state.sim.distribution = byId("simDistribution").value || state.sim.distribution;
-
-    const out = runMonteCarlo();
-    if (!out) return toast("Simulation not available yet. Load data first.");
-    renderSimulations();
-    renderCopilot();
-    toast("Simulation complete");
-  });
-
-  // Copilot controls (optional)
-  on(byId("copilotAudience"), "change", (e)=>{ state.copilot.audience = e.target.value; renderCopilot(); });
-  on(byId("copilotTone"), "change", (e)=>{ state.copilot.tone = e.target.value; renderCopilot(); });
-  on(byId("copilotLength"), "change", (e)=>{ state.copilot.length = e.target.value; renderCopilot(); });
-  on(byId("copilotIncludeTables"), "change", (e)=>{ state.copilot.includeTables = e.target.checked; renderCopilot(); });
-  on(byId("copilotIncludeAssumptions"), "change", (e)=>{ state.copilot.includeAssumptions = e.target.checked; renderCopilot(); });
-  on(byId("copilotIncludeCashflows"), "change", (e)=>{ state.copilot.includeCashflows = e.target.checked; renderCopilot(); });
-  on(byId("copilotIncludeSensitivity"), "change", (e)=>{ state.copilot.includeSensitivity = e.target.checked; renderCopilot(); });
-  on(byId("copilotIncludeSimulations"), "change", (e)=>{ state.copilot.includeSimulations = e.target.checked; renderCopilot(); });
-
-  on(byId("btnCopilotCopy"), "click", async () => {
-    const ta = byId("copilotPrompt");
-    if (!ta) return;
-    await copyTextToClipboard(ta.value || "");
-  });
-
-  on(byId("btnCopilotDownload"), "click", () => {
-    const ta = byId("copilotPrompt");
-    if (!ta) return;
-    downloadText("copilot_prompt.json", ta.value || "{}", "application/json");
-  });
-
-  on(byId("btnCopilotRefresh"), "click", () => {
-    renderCopilot();
-    toast("Prompt refreshed");
-  });
-}
-
-/* =========================
-   Reset + boot
-   ========================= */
-function resetApp(){
-  state.source = null;
-  state.raw = [];
-  state.columns = [];
-  state.map = {treatment:null, baseline:null, yield:null, cost:null, optional1:null};
-  state.assumptions = {
-    areaHa: 100,
-    horizonYears: 10,
-    discountRatePct: 7,
-    priceYear1: 450,
-    priceGrowthPct: 0,
-    yieldScale: 1,
-    costScale: 1,
-    benefitStartYear: 1,
-    effectDurationYears: 5,
-    decay: "linear",
-    halfLifeYears: 2,
-    costTimingDefault: "y1_only"
-  };
-  state.treatmentOverrides = {};
-  state.adders.items = [];
-  state.ui = {activeTab:"import", rankBy:"npv", view:"whole_farm", cashflowTreatment:null};
-  state.cache = {
-    trialSummary:null,
-    cbaPerTreatment:null,
-    lastSensitivity: state.cache.lastSensitivity || null,
-    lastSim: null
-  };
-
-  const fi = byId("fileInput");
-  if (fi) fi.value = "";
-  toast("Reset complete");
-  renderAll();
-  setActiveTab("import");
-}
-
-(function boot(){
-  bindEvents();
-
-  // Sensitivity defaults if controls exist
-  if (byId("sensPricePct")) byId("sensPricePct").value = 10;
-  if (byId("sensCostPct")) byId("sensCostPct").value = 10;
-  if (byId("sensYieldPct")) byId("sensYieldPct").value = 10;
-  if (byId("sensDiscountPts")) byId("sensDiscountPts").value = 2;
-  if (byId("sensDurationDelta")) byId("sensDurationDelta").value = 2;
-
-  renderAll();
-  setActiveTab("import");
-
-  // Auto-load: try bundled; otherwise embedded
-  (async () => {
-    try{
-      const ok = await tryLoadBundled();
-      if (!ok) loadEmbedded();
-    } catch(e){
-      loadEmbedded();
+    if (!state.results) {
+      box.innerHTML = `<div class="muted">Run analysis first to generate the Copilot pack.</div>`;
+      promptEl.value = '';
+      jsonEl.value = '';
+      mdEl.value = '';
+      return;
     }
-  })();
+
+    const built = buildCopilotPack();
+    const json = JSON.stringify(built.pack, null, 2);
+
+    promptEl.value = built.prompt;
+    jsonEl.value = json;
+    mdEl.value = `${built.mdTable}\n\n${built.mdDelta}`;
+    box.innerHTML = `
+      <div class="callout">
+        <div class="callout__title">Copilot / AI briefing pack</div>
+        <div class="callout__body">
+          Copy the Prompt, then copy the JSON, paste both into your AI tool (e.g., Microsoft Copilot), and request a full policy brief and tables.
+        </div>
+      </div>
+    `;
+  }
+
+  // -----------------------------
+  // Export
+  // -----------------------------
+  function exportResultsExcel() {
+    if (!state.results) {
+      setStatus('Run analysis first, then export.', 'warn');
+      return;
+    }
+
+    const { columns, rows, deltas, controlId } = state.results;
+    const control = columns.find((c) => c.id === controlId);
+
+    const wb = XLSX.utils.book_new();
+
+    // Summary sheet
+    const summary = [
+      ['Farming CBA Decision Tool 2 — Results export'],
+      ['Generated', new Date().toISOString()],
+      [],
+      ['Assumptions'],
+      ['Farm area (ha)', state.assumptions.areaHa],
+      ['Time horizon (years)', state.assumptions.horizonYears],
+      ['Discount rate', state.assumptions.discountRate],
+      ['Grain price ($/t)', state.assumptions.grainPrice],
+      ['Price growth (per year)', state.assumptions.priceGrowth],
+      ['Yield growth (per year)', state.assumptions.yieldGrowth],
+      ['Cost growth (per year)', state.assumptions.costGrowth],
+      [],
+      ['Control', control?.label || '']
+    ];
+    const ws0 = XLSX.utils.aoa_to_sheet(summary);
+    XLSX.utils.book_append_sheet(wb, ws0, 'Summary');
+
+    // Results table (indicator rows x treatments columns)
+    const header = ['Economic indicator', ...columns.map((c) => c.label)];
+    const aoa = [header];
+    for (const r of rows) {
+      const line = [r.label];
+      for (const c of columns) {
+        const v = r.key === 'rank' ? r.cells[c.id] : r.cells[c.id];
+        line.push(v);
+      }
+      aoa.push(line);
+    }
+    const ws1 = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Results');
+
+    // Delta table
+    const header2 = ['Δ vs control', ...columns.map((c) => c.label)];
+    const aoa2 = [header2];
+    for (const r of deltas) {
+      const line = [r.label];
+      for (const c of columns) line.push(r.cells[c.id]);
+      aoa2.push(line);
+    }
+    const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+    XLSX.utils.book_append_sheet(wb, ws2, 'DeltasVsControl');
+
+    // Additional items
+    const addAoa = [
+      ['Type', 'Name', 'Value', 'Unit', 'Mode', 'StartYear', 'EndYear'],
+      ...state.addBenefits.map((x) => ['Benefit', x.name, x.value, x.unit, x.mode, x.startYear, x.endYear]),
+      ...state.addCosts.map((x) => ['Cost', x.name, x.value, x.unit, x.mode, x.startYear, x.endYear])
+    ];
+    const ws3 = XLSX.utils.aoa_to_sheet(addAoa);
+    XLSX.utils.book_append_sheet(wb, ws3, 'AdditionalItems');
+
+    // Copilot pack (JSON)
+    const built = buildCopilotPack();
+    const ws4 = XLSX.utils.aoa_to_sheet([['Copilot JSON'], [JSON.stringify(built.pack, null, 2)]]);
+    XLSX.utils.book_append_sheet(wb, ws4, 'CopilotPack');
+
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    downloadBlob(`Farming_CBA_Results_${new Date().toISOString().slice(0, 10)}.xlsx`, new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  }
+
+  // -----------------------------
+  // Recompute pipeline
+  // -----------------------------
+  function recomputeAndRender() {
+    if (!state.rows.length) {
+      state.results = null;
+      state.simulations = null;
+      renderResultsTable();
+      renderSimulations();
+      renderCopilot();
+      return;
+    }
+
+    state.results = computeAllResults();
+    renderResultsTable();
+    renderSimTreatmentSelect();
+    renderCopilot();
+
+    // Clear simulations when anything changes
+    state.simulations = null;
+    renderSimulations();
+  }
+
+  // -----------------------------
+  // Event wiring
+  // -----------------------------
+  function initAssumptionInputs() {
+    const bindNum = (id, setter) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('input', () => {
+        setter(el.value);
+        recomputeAndRender();
+      });
+    };
+
+    bindNum('#areaHa', (v) => (state.assumptions.areaHa = Math.max(0, asNumber(v) || 0)));
+    bindNum('#horizonYears', (v) => (state.assumptions.horizonYears = clamp(Math.floor(asNumber(v) || 1), 1, 60)));
+    bindNum('#discountRate', (v) => (state.assumptions.discountRate = clamp((asNumber(v) || 0) / 100, 0, 0.5)));
+    bindNum('#grainPrice', (v) => (state.assumptions.grainPrice = Math.max(0, asNumber(v) || 0)));
+    bindNum('#priceGrowth', (v) => (state.assumptions.priceGrowth = clamp((asNumber(v) || 0) / 100, -0.5, 0.5)));
+    bindNum('#yieldGrowth', (v) => (state.assumptions.yieldGrowth = clamp((asNumber(v) || 0) / 100, -0.5, 0.5)));
+    bindNum('#costGrowth', (v) => (state.assumptions.costGrowth = clamp((asNumber(v) || 0) / 100, -0.5, 0.5)));
+
+    const btn = $('#runAnalysisBtn');
+    if (btn) btn.addEventListener('click', () => recomputeAndRender());
+  }
+
+  function initAddItemForms() {
+    function addItem(kind) {
+      const prefix = kind === 'benefit' ? 'ben' : 'cost';
+      const name = $(`#${prefix}Name`)?.value?.trim();
+      const value = asNumber($(`#${prefix}Value`)?.value);
+      const unit = $(`#${prefix}Unit`)?.value || 'per_ha';
+      const mode = $(`#${prefix}Mode`)?.value || 'annual';
+      const startYear = Math.max(1, Math.floor(asNumber($(`#${prefix}Start`)?.value) || 1));
+      const endYear = Math.max(startYear, Math.floor(asNumber($(`#${prefix}End`)?.value) || state.assumptions.horizonYears));
+
+      if (!name || !isFinite(value)) {
+        setStatus(`Please provide a name and a valid numeric value for the ${kind}.`, 'warn');
+        return;
+      }
+
+      const item = { id: uid(kind), name, value, unit, mode, startYear, endYear };
+      if (kind === 'benefit') state.addBenefits.push(item);
+      else state.addCosts.push(item);
+
+      // Clear
+      $(`#${prefix}Name`).value = '';
+      $(`#${prefix}Value`).value = '';
+      $(`#${prefix}Start`).value = '1';
+      $(`#${prefix}End`).value = String(state.assumptions.horizonYears);
+
+      renderAddList(kind);
+      recomputeAndRender();
+      setStatus(`${kind === 'benefit' ? 'Benefit' : 'Cost'} added.`, 'ok');
+    }
+
+    $('#addBenefitBtn')?.addEventListener('click', () => addItem('benefit'));
+    $('#addCostBtn')?.addEventListener('click', () => addItem('cost'));
+  }
+
+  function initSimulationControls() {
+    $('#runSimBtn')?.addEventListener('click', () => {
+      if (!state.results) {
+        setStatus('Run the base analysis first, then run simulations.', 'warn');
+        return;
+      }
+      state.simulations = runSimulations();
+      renderSimulations();
+      setStatus('Simulations completed.', 'ok');
+    });
+  }
+
+  function initCopilotButtons() {
+    $('#copyPromptBtn')?.addEventListener('click', async () => {
+      const ok = await copyToClipboard($('#copilotPrompt')?.value || '');
+      setStatus(ok ? 'Prompt copied.' : 'Could not copy prompt. Select and copy manually.', ok ? 'ok' : 'warn');
+    });
+    $('#copyJSONBtn')?.addEventListener('click', async () => {
+      const ok = await copyToClipboard($('#copilotJSON')?.value || '');
+      setStatus(ok ? 'JSON copied.' : 'Could not copy JSON. Select and copy manually.', ok ? 'ok' : 'warn');
+    });
+    $('#copyMDBtn')?.addEventListener('click', async () => {
+      const ok = await copyToClipboard($('#copilotMD')?.value || '');
+      setStatus(ok ? 'Tables copied.' : 'Could not copy tables. Select and copy manually.', ok ? 'ok' : 'warn');
+    });
+  }
+
+  function initExportButtons() {
+    $('#exportExcelBtn')?.addEventListener('click', exportResultsExcel);
+    $('#exportCSVBtn')?.addEventListener('click', () => {
+      if (!state.results) {
+        setStatus('Run analysis first, then export.', 'warn');
+        return;
+      }
+      const { columns, rows, deltas } = state.results;
+      const header = ['Economic indicator', ...columns.map((c) => c.label)];
+      const out1 = [header, ...rows.map((r) => [r.label, ...columns.map((c) => r.key === 'rank' ? r.cells[c.id] : r.cells[c.id])])];
+      const out2 = [['Δ vs control', ...columns.map((c) => c.label)], ...deltas.map((r) => [r.label, ...columns.map((c) => r.cells[c.id])])];
+
+      const csv = `RESULTS\n${toCSV(out1)}\n\nDELTAS_VS_CONTROL\n${toCSV(out2)}\n`;
+      downloadBlob(`Farming_CBA_Results_${new Date().toISOString().slice(0, 10)}.csv`, new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    });
+  }
+
+  function initFileUpload() {
+    const input = $('#fileInput');
+    const sheetSelect = $('#sheetSelect');
+
+    if (!input) return;
+
+    input.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setStatus('Reading Excel file…', 'info');
+
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        state.workbook = wb;
+        const names = wb.SheetNames || [];
+        state.sheetName = names[0] || null;
+
+        // Populate sheets
+        if (sheetSelect) {
+          sheetSelect.innerHTML = names.map((n) => `<option value="${safeText(n)}">${safeText(n)}</option>`).join('');
+          sheetSelect.value = state.sheetName || '';
+          sheetSelect.disabled = names.length <= 1;
+          sheetSelect.addEventListener('change', () => {
+            state.sheetName = sheetSelect.value;
+            loadSheetAndCompute();
+          });
+        }
+
+        await loadSheetAndCompute();
+        setStatus('Data loaded. Review the Data tab, then run analysis.', 'ok');
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not read the Excel file. Please confirm it is a valid .xlsx and try again.', 'warn');
+      }
+    });
+
+    async function loadSheetAndCompute() {
+      if (!state.workbook || !state.sheetName) return;
+
+      const sheet = state.workbook.Sheets[state.sheetName];
+      const { header, rows } = sheetToRows(sheet);
+
+      // Store
+      state.columns = header;
+      state.rows = rows;
+
+      // Detect fields
+      state.meta = detectFields(state.columns, state.rows);
+
+      // Render
+      renderDataSummary();
+      renderPreviewTable();
+      renderAssumptions();
+
+      // Pre-set add item end years to horizon
+      const benEnd = $('#benEnd');
+      const costEnd = $('#costEnd');
+      if (benEnd) benEnd.value = String(state.assumptions.horizonYears);
+      if (costEnd) costEnd.value = String(state.assumptions.horizonYears);
+
+      // Recompute
+      recomputeAndRender();
+
+      // Populate sim select once results exist
+      if (state.results) renderSimTreatmentSelect();
+
+      // Refresh copilot pack
+      renderCopilot();
+    }
+  }
+
+  // -----------------------------
+  // Init
+  // -----------------------------
+  document.addEventListener('DOMContentLoaded', () => {
+    initTabs();
+    initFileUpload();
+    initAssumptionInputs();
+    initAddItemForms();
+    initSimulationControls();
+    initCopilotButtons();
+    initExportButtons();
+
+    // Initial renders
+    renderDataSummary();
+    renderPreviewTable();
+    renderAssumptions();
+    renderAddList('benefit');
+    renderAddList('cost');
+    renderResultsTable();
+    renderCopilot();
+    renderSimulations();
+
+    setStatus('Ready. Upload your Excel file to begin.', 'info');
+  });
+
 })();
