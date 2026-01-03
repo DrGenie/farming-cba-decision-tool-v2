@@ -1,5 +1,6 @@
 // app.js – Farming CBA Decision Tool 2
-// Fully functional: tab navigation, data upload (XLSX/CSV), CBA, AI prompt, Excel export, print.
+// Tabs, data upload (XLSX/CSV), aggregation by Amendment, CBA, additional variables,
+// simulations, AI prompt, Excel export, print.
 
 /* ---------- Global state ---------- */
 
@@ -7,8 +8,15 @@ const state = {
   pricePerTonne: 600,      // $ per tonne
   discountRate: 0.07,      // annual rate in decimal
   horizonYears: 10,        // years
-  treatments: [],          // [{ id, name, avgYieldPerHa, annualCostPerHa, capitalCostY0, isControl }]
-  results: []              // computed results sorted by NPV
+  treatments: [],          // [{ id, name, avgYieldPerHa, annualCostPerHa, capitalCostY0, isControl, extraAggregates }]
+  additionalFields: [],    // [{ key, label, colIndex, type }]
+  results: [],             // computed CBA results sorted by NPV
+  simulation: {
+    lowPricePct: 80,
+    highPricePct: 120,
+    highCostPct: 120,
+    lowCostPct: 80
+  }
 };
 
 /* ---------- Utilities ---------- */
@@ -86,6 +94,26 @@ function formatMetricValue(key, value) {
   }
 }
 
+function classifyAdditionalField(normHeader) {
+  const costKeywords = [
+    "cost", "labour", "labor", "machine", "machinery",
+    "tractor", "header", "ute", "truck", "spray", "seeder",
+    "ripper", "tiller", "transport", "capital"
+  ];
+  const benefitKeywords = [
+    "yield", "biomass", "plants", "plant", "protein",
+    "moisture", "anthesis", "harvest"
+  ];
+
+  for (const kw of costKeywords) {
+    if (normHeader.includes(kw)) return "cost";
+  }
+  for (const kw of benefitKeywords) {
+    if (normHeader.includes(kw)) return "benefit";
+  }
+  return "other";
+}
+
 /* ---------- Metrics definition (for table & Excel) ---------- */
 
 const METRICS = [
@@ -139,6 +167,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupUpload();
   setupCopyPrompt();
   setupExports();
+  setupSimulationInputs();
   updateScenarioSummary();
   computeAndRenderAll();
 });
@@ -330,8 +359,26 @@ function handleDataFile(file) {
       const idxYield = idxFor("yield t/ha");
       const idxCost = idxFor("treatment input cost only /ha");
 
+      // Additional fields: all other columns with non-empty labels
+      const additionalFieldDefs = [];
+      headerRow.forEach((cell, idx) => {
+        if (idx === idxAmendment || idx === idxYield || idx === idxCost) return;
+        const labelRaw = String(cell || "").trim();
+        if (!labelRaw) return;
+        const norm = normaliseHeader(labelRaw);
+        if (!norm) return;
+        const type = classifyAdditionalField(norm);
+        additionalFieldDefs.push({
+          key: labelRaw,   // use original header text as key
+          label: labelRaw,
+          colIndex: idx,
+          type
+        });
+      });
+      state.additionalFields = additionalFieldDefs;
+
       // Aggregate by amendment
-      const groups = {}; // { name: { name, yieldSum, costSum, count } }
+      const groups = {}; // { name: { name, yieldSum, costSum, count, extraSums } }
       let usedRowCount = 0;
 
       for (let i = headerIndex + 1; i < matrix.length; i++) {
@@ -350,25 +397,48 @@ function handleDataFile(file) {
             name,
             yieldSum: 0,
             costSum: 0,
-            count: 0
+            count: 0,
+            extraSums: {} // key -> {sum, count}
           };
         }
-        groups[name].yieldSum += yVal;
-        groups[name].costSum += cVal;
-        groups[name].count += 1;
+        const g = groups[name];
+        g.yieldSum += yVal;
+        g.costSum += cVal;
+        g.count += 1;
         usedRowCount += 1;
+
+        // Additional fields
+        additionalFieldDefs.forEach((field) => {
+          const val = cellToNumber(row[field.colIndex]);
+          const key = field.key;
+          if (!g.extraSums[key]) {
+            g.extraSums[key] = { sum: 0, count: 0 };
+          }
+          g.extraSums[key].sum += val;
+          g.extraSums[key].count += 1;
+        });
       }
 
       const treatments = Object.values(groups).map((g) => {
         const avgYield = g.count > 0 ? g.yieldSum / g.count : 0;
         const avgCost = g.count > 0 ? g.costSum / g.count : 0;
+        const extraAggregates = {};
+        if (g.extraSums) {
+          additionalFieldDefs.forEach((field) => {
+            const stats = g.extraSums[field.key];
+            if (stats && stats.count > 0) {
+              extraAggregates[field.key] = stats.sum / stats.count;
+            }
+          });
+        }
         return {
           id: g.name,
           name: g.name,
           avgYieldPerHa: roundTo(avgYield, 3),
           annualCostPerHa: roundTo(avgCost, 2),
           capitalCostY0: 0,
-          isControl: /control/i.test(g.name)
+          isControl: /control/i.test(g.name),
+          extraAggregates
         };
       });
 
@@ -380,9 +450,19 @@ function handleDataFile(file) {
         return;
       }
 
-      // Ensure one control
+      // Ensure exactly one control
       if (!treatments.some((t) => t.isControl)) {
         treatments[0].isControl = true;
+      } else {
+        let controlFound = false;
+        treatments.forEach((t) => {
+          if (t.isControl && !controlFound) {
+            controlFound = true;
+          } else {
+            t.isControl = false;
+          }
+        });
+        if (!controlFound) treatments[0].isControl = true;
       }
 
       state.treatments = treatments;
@@ -531,6 +611,97 @@ function renderTreatmentsConfig() {
   });
 }
 
+/* ---------- Additional variables rendering ---------- */
+
+function renderAdditionalVariables() {
+  const empty = document.getElementById("additional-empty");
+  const benefitsWrapper = document.getElementById("additional-benefits-wrapper");
+  const costsWrapper = document.getElementById("additional-costs-wrapper");
+  const otherWrapper = document.getElementById("additional-other-wrapper");
+  const benefitsTable = document.getElementById("additional-benefits-table");
+  const costsTable = document.getElementById("additional-costs-table");
+  const otherTable = document.getElementById("additional-other-table");
+
+  if (!benefitsTable || !costsTable || !otherTable) return;
+
+  benefitsTable.innerHTML = "";
+  costsTable.innerHTML = "";
+  otherTable.innerHTML = "";
+
+  const hasTreatments = state.treatments && state.treatments.length > 0;
+  const hasFields = state.additionalFields && state.additionalFields.length > 0;
+
+  if (!hasTreatments || !hasFields) {
+    if (empty) empty.style.display = "block";
+    if (benefitsWrapper) benefitsWrapper.style.display = "none";
+    if (costsWrapper) costsWrapper.style.display = "none";
+    if (otherWrapper) otherWrapper.style.display = "none";
+    return;
+  }
+
+  if (empty) empty.style.display = "none";
+
+  const treatments = state.treatments;
+  const benefitsFields = state.additionalFields.filter((f) => f.type === "benefit");
+  const costFields = state.additionalFields.filter((f) => f.type === "cost");
+  const otherFields = state.additionalFields.filter((f) => f.type === "other");
+
+  function buildTable(fields, tableEl, wrapperEl) {
+    if (!wrapperEl) return;
+    if (!fields.length) {
+      wrapperEl.style.display = "none";
+      return;
+    }
+    wrapperEl.style.display = "block";
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+
+    const firstTh = document.createElement("th");
+    firstTh.textContent = "Variable";
+    headRow.appendChild(firstTh);
+
+    treatments.forEach((t) => {
+      const th = document.createElement("th");
+      th.textContent = t.name;
+      if (t.isControl) th.classList.add("col-control");
+      headRow.appendChild(th);
+    });
+
+    thead.appendChild(headRow);
+    tableEl.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+
+    fields.forEach((field) => {
+      const tr = document.createElement("tr");
+      const labelTh = document.createElement("th");
+      labelTh.scope = "row";
+      labelTh.textContent = field.label;
+      tr.appendChild(labelTh);
+
+      treatments.forEach((t) => {
+        const td = document.createElement("td");
+        if (t.isControl) td.classList.add("col-control");
+        const val =
+          t.extraAggregates && Object.prototype.hasOwnProperty.call(t.extraAggregates, field.key)
+            ? t.extraAggregates[field.key]
+            : null;
+        td.textContent = Number.isFinite(Number(val)) ? formatNumber(val, 2) : "–";
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    tableEl.appendChild(tbody);
+  }
+
+  buildTable(benefitsFields, benefitsTable, benefitsWrapper);
+  buildTable(costFields, costsTable, costsWrapper);
+  buildTable(otherFields, otherTable, otherWrapper);
+}
+
 /* ---------- CBA computation & rendering ---------- */
 
 function computeAndRenderAll() {
@@ -538,9 +709,12 @@ function computeAndRenderAll() {
 
   // Treatments grid
   renderTreatmentsConfig();
+  // Additional variables
+  renderAdditionalVariables();
 
   if (!hasTreatments) {
     renderResultsTable(null);
+    renderSimulationsTable(null, null);
     updateAIPrompt(null, null);
     return;
   }
@@ -550,7 +724,7 @@ function computeAndRenderAll() {
     treatments.find((t) => t.isControl) || treatments[0];
 
   const baseYield = Number(control.avgYieldPerHa) || 0;
-  const baseAnnualCost = 0; // we treat Treatment Input Cost Only /Ha as extra cost vs control
+  const baseAnnualCost = 0; // we treat treatment cost as extra vs control
 
   const r = state.discountRate;
   const T = state.horizonYears;
@@ -600,6 +774,7 @@ function computeAndRenderAll() {
   state.results = sorted;
 
   renderResultsTable(sorted);
+  computeAndRenderSimulations();
   updateAIPrompt(sorted, control);
 }
 
@@ -693,6 +868,231 @@ function renderResultsTable(resultsSorted) {
   table.appendChild(tbody);
 }
 
+/* ---------- Simulations ---------- */
+
+function setupSimulationInputs() {
+  const lowPrice = document.getElementById("sim-low-price");
+  const highPrice = document.getElementById("sim-high-price");
+  const highCost = document.getElementById("sim-high-cost");
+  const lowCost = document.getElementById("sim-low-cost");
+
+  if (lowPrice) {
+    lowPrice.value = state.simulation.lowPricePct;
+    lowPrice.addEventListener("change", () => {
+      let v = parseFloat(lowPrice.value);
+      if (!Number.isFinite(v) || v < 0) v = 80;
+      state.simulation.lowPricePct = v;
+      lowPrice.value = v;
+      computeAndRenderSimulations();
+    });
+  }
+
+  if (highPrice) {
+    highPrice.value = state.simulation.highPricePct;
+    highPrice.addEventListener("change", () => {
+      let v = parseFloat(highPrice.value);
+      if (!Number.isFinite(v) || v < 0) v = 120;
+      state.simulation.highPricePct = v;
+      highPrice.value = v;
+      computeAndRenderSimulations();
+    });
+  }
+
+  if (highCost) {
+    highCost.value = state.simulation.highCostPct;
+    highCost.addEventListener("change", () => {
+      let v = parseFloat(highCost.value);
+      if (!Number.isFinite(v) || v < 0) v = 120;
+      state.simulation.highCostPct = v;
+      highCost.value = v;
+      computeAndRenderSimulations();
+    });
+  }
+
+  if (lowCost) {
+    lowCost.value = state.simulation.lowCostPct;
+    lowCost.addEventListener("change", () => {
+      let v = parseFloat(lowCost.value);
+      if (!Number.isFinite(v) || v < 0) v = 80;
+      state.simulation.lowCostPct = v;
+      lowCost.value = v;
+      computeAndRenderSimulations();
+    });
+  }
+}
+
+function computeAndRenderSimulations() {
+  const table = document.getElementById("sim-results-table");
+  const wrapper = document.getElementById("sim-results-wrapper");
+  const empty = document.getElementById("sim-empty");
+
+  if (!table) return;
+
+  table.innerHTML = "";
+
+  if (!state.treatments || !state.treatments.length) {
+    if (wrapper) wrapper.style.display = "none";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+
+  const treatments = state.treatments;
+  const control =
+    treatments.find((t) => t.isControl) || treatments[0];
+  const baseYield = Number(control.avgYieldPerHa) || 0;
+
+  const r = state.discountRate;
+  const T = state.horizonYears;
+  const basePrice = state.pricePerTonne;
+
+  const pLow = basePrice * (state.simulation.lowPricePct / 100);
+  const pHigh = basePrice * (state.simulation.highPricePct / 100);
+  const cHighMult = state.simulation.highCostPct / 100;
+  const cLowMult = state.simulation.lowCostPct / 100;
+
+  const scenarios = {
+    worst: {
+      key: "worst",
+      label: "Worst case (low price, high cost)",
+      price: pLow,
+      costMult: cHighMult
+    },
+    base: {
+      key: "base",
+      label: "Base case",
+      price: basePrice,
+      costMult: 1
+    },
+    best: {
+      key: "best",
+      label: "Best case (high price, low cost)",
+      price: pHigh,
+      costMult: cLowMult
+    }
+  };
+
+  const rows = treatments.map((t) => {
+    const avgYield = Number(t.avgYieldPerHa) || 0;
+    const annualCost = Number(t.annualCostPerHa) || 0;
+    const capitalCost = Number(t.capitalCostY0) || 0;
+    const deltaYield = avgYield - baseYield;
+    const baseBenefitMultiplier = deltaYield; // NPV benefits scale with price
+
+    const npvWorst = computeNPVScenario(
+      baseBenefitMultiplier,
+      scenarios.worst.price,
+      annualCost,
+      capitalCost,
+      r,
+      T,
+      scenarios.worst.costMult
+    );
+    const npvBase = computeNPVScenario(
+      baseBenefitMultiplier,
+      scenarios.base.price,
+      annualCost,
+      capitalCost,
+      r,
+      T,
+      scenarios.base.costMult
+    );
+    const npvBest = computeNPVScenario(
+      baseBenefitMultiplier,
+      scenarios.best.price,
+      annualCost,
+      capitalCost,
+      r,
+      T,
+      scenarios.best.costMult
+    );
+
+    return {
+      name: t.name,
+      isControl: !!t.isControl,
+      npvWorst,
+      npvBase,
+      npvBest
+    };
+  });
+
+  renderSimulationsTable(rows, scenarios);
+}
+
+function computeNPVScenario(baseBenefitMultiplier, price, annualCost, capitalCost, r, T, costMult) {
+  const annualBenefit = baseBenefitMultiplier * price;
+  const pvBenefits = pvOfAnnual(annualBenefit, r, T);
+  const pvCosts = capitalCost + pvOfAnnual(annualCost * costMult, r, T);
+  return pvBenefits - pvCosts;
+}
+
+function renderSimulationsTable(rows, scenarios) {
+  const table = document.getElementById("sim-results-table");
+  const wrapper = document.getElementById("sim-results-wrapper");
+  const empty = document.getElementById("sim-empty");
+
+  if (!table) return;
+
+  table.innerHTML = "";
+
+  if (!rows || !rows.length || !scenarios) {
+    if (wrapper) wrapper.style.display = "none";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+
+  if (wrapper) wrapper.style.display = "block";
+  if (empty) empty.style.display = "none";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+
+  const thName = document.createElement("th");
+  thName.textContent = "Treatment";
+  headRow.appendChild(thName);
+
+  const thWorst = document.createElement("th");
+  thWorst.textContent = "NPV – worst case";
+  headRow.appendChild(thWorst);
+
+  const thBase = document.createElement("th");
+  thBase.textContent = "NPV – base case";
+  headRow.appendChild(thBase);
+
+  const thBest = document.createElement("th");
+  thBest.textContent = "NPV – best case";
+  headRow.appendChild(thBest);
+
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    tdName.textContent = row.name;
+    if (row.isControl) tdName.classList.add("col-control");
+    tr.appendChild(tdName);
+
+    const tdWorst = document.createElement("td");
+    tdWorst.textContent = formatCurrency(row.npvWorst);
+    tr.appendChild(tdWorst);
+
+    const tdBase = document.createElement("td");
+    tdBase.textContent = formatCurrency(row.npvBase);
+    tr.appendChild(tdBase);
+
+    const tdBest = document.createElement("td");
+    tdBest.textContent = formatCurrency(row.npvBest);
+    tr.appendChild(tdBest);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+}
+
 /* ---------- AI helper prompt ---------- */
 
 function setupCopyPrompt() {
@@ -708,7 +1108,6 @@ function setupCopyPrompt() {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(textarea.value);
       } else {
-        // Fallback
         textarea.select();
         document.execCommand("copy");
       }
@@ -735,6 +1134,31 @@ function updateAIPrompt(resultsSorted, controlTreatment) {
     return;
   }
 
+  const treatmentsExport = resultsSorted.map((r) => {
+    const extra = {};
+    const t = state.treatments.find((tt) => tt.name === r.name);
+    if (t && t.extraAggregates) {
+      Object.keys(t.extraAggregates).forEach((k) => {
+        extra[k] = t.extraAggregates[k];
+      });
+    }
+    return {
+      name: r.name,
+      is_control: !!r.isControl,
+      avg_yield_t_per_ha: r.avgYieldPerHa,
+      annual_cost_per_ha: r.annualCost,
+      capital_cost_year0: r.capitalCostY0,
+      delta_yield_vs_control: r.deltaYield,
+      pv_benefits: r.pvBenefits,
+      pv_costs: r.pvCosts,
+      npv: r.npv,
+      bcr: r.bcr,
+      roi: r.roi,
+      rank_by_npv: r.rank,
+      additional_variables: extra
+    };
+  });
+
   const exportObj = {
     tool_name: "Farming CBA Decision Tool 2",
     currency: "AUD",
@@ -750,45 +1174,48 @@ function updateAIPrompt(resultsSorted, controlTreatment) {
       pv_costs:
         "PV costs = discounted value of treatment-related costs, including any capital cost in year 0.",
       bcr: "BCR = PV benefits ÷ PV costs.",
-      roi: "ROI = NPV ÷ PV costs."
+      roi: "ROI = NPV ÷ PV costs.",
+      simulation_scenarios:
+        "Worst case: low grain price and high treatment costs. Best case: high grain price and low treatment costs."
     },
-    treatments: resultsSorted.map((r) => ({
-      name: r.name,
-      is_control: !!r.isControl,
-      avg_yield_t_per_ha: r.avgYieldPerHa,
-      annual_cost_per_ha: r.annualCost,
-      capital_cost_year0: r.capitalCostY0,
-      delta_yield_vs_control: r.deltaYield,
-      pv_benefits: r.pvBenefits,
-      pv_costs: r.pvCosts,
-      npv: r.npv,
-      bcr: r.bcr,
-      roi: r.roi,
-      rank_by_npv: r.rank
-    }))
+    simulation_settings: {
+      low_price_pct_of_base: state.simulation.lowPricePct,
+      high_price_pct_of_base: state.simulation.highPricePct,
+      high_cost_pct_of_base: state.simulation.highCostPct,
+      low_cost_pct_of_base: state.simulation.lowCostPct
+    },
+    treatments: treatmentsExport
   };
 
   const lines = [
-    "You are interpreting results from a farm cost–benefit analysis tool called “Farming CBA Decision Tool 2”.",
+    "You are interpreting results from a farm cost–benefit analysis tool called \"Farming CBA Decision Tool 2\".",
     "Use plain language suitable for a farmer or on-farm manager. Avoid jargon. Focus on what drives results and what could be changed.",
     "",
     "Important constraints:",
-    "• Do not tell the user which treatment to choose.",
-    "• Do not impose decision rules or hard thresholds (for example, do not say “always choose BCR > 1”).",
-    "• Treat this as decision support: explain trade-offs, risks, and practical ways to improve low-performing options.",
+    "- Do not tell the user which treatment to choose.",
+    "- Do not impose decision rules or hard thresholds (for example, do not say \"always choose BCR > 1\").",
+    "- Treat this as decision support: explain trade-offs, risks, and practical ways to improve low-performing options.",
     "",
     "Definitions for the indicators:",
-    "• NPV = PV benefits − PV costs. Positive NPV indicates net economic gain compared with the control.",
-    "• PV benefits = discounted value of extra yield revenue compared with the control.",
-    "• PV costs = discounted value of treatment-related costs, including any upfront capital cost.",
-    "• BCR = PV benefits ÷ PV costs.",
-    "• ROI = NPV ÷ PV costs (net gain per dollar of PV cost).",
+    "- NPV = PV benefits − PV costs. Positive NPV indicates net economic gain compared with the control.",
+    "- PV benefits = discounted value of extra yield revenue compared with the control.",
+    "- PV costs = discounted value of treatment-related costs, including any upfront capital cost.",
+    "- BCR = PV benefits ÷ PV costs.",
+    "- ROI = NPV ÷ PV costs (net gain per dollar of PV cost).",
     "",
-    "Task:",
+    "TASK 1 – Farmer-facing interpretation:",
     "Write a 2–3 page narrative (about 1,200–1,800 words) that:",
-    "1. Summarises which treatments perform better or worse in economic terms and why (linking to yield, costs, and the discounting assumptions).",
+    "1. Summarises which treatments perform better or worse in economic terms and why (linking to yield, costs, additional variables, and the discounting assumptions).",
     "2. Explains what each indicator (NPV, PV benefits, PV costs, BCR, ROI) means in practice for an on-farm decision.",
-    "3. For any treatment with weak performance (low or negative NPV, BCR below 1, or clearly dominated by others), discusses practical ways the farmer might improve it, such as reducing costs, improving yields, or altering agronomic practices. Frame these as possibilities, not instructions.",
+    "3. For any treatment with weak performance (low or negative NPV, low BCR, or clearly dominated by others), discusses practical ways the farmer might improve it, such as reducing costs, improving yields, or altering agronomic practices. Frame these as possibilities, not instructions.",
+    "",
+    "TASK 2 – Policy- and investor-facing brief:",
+    "Using the same data, prepare a structured policy brief suitable for government or investors that:",
+    "1. Opens with a half-page summary of the key economic findings (no recommendations, just what the numbers show).",
+    "2. Includes a clear table comparing treatments on NPV, PV benefits, PV costs, BCR, ROI, and yield differences versus the control (in a format that can be pasted into Word or Excel).",
+    "3. Describes where the results are sensitive to assumptions about prices, costs and discount rates, drawing on the worst/base/best scenarios.",
+    "4. Highlights where additional agronomic indicators (for example biomass, plants per m²) or cost components (for example labour, machinery, transport) help explain differences in performance.",
+    "5. Ends with a short section on questions that decision makers should ask before scaling up any treatment (for example robustness to input prices, water availability, or operational capacity).",
     "",
     "SCENARIO DATA (JSON):",
     JSON.stringify(exportObj, null, 2)
