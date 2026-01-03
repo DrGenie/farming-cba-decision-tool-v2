@@ -21,59 +21,74 @@
     </header>
 
     <nav class="tabs">
-      <button class="tab-button active" data-tab="tab-intro">1. Overview</button>
-      <button class="tab-button" data-tab="tab-data">2. Data &amp; Treatments</button>
-      <button class="tab-button" data-tab="tab-results">3. Results matrix</button>
-      <button class="tab-button" data-tab="tab-ai">4. AI helper prompt</button>
-      <button class="tab-button" data-tab="tab-export">5. Export &amp; print</button>
+      <button class="tab-button active" data-tab="tab-intro">1. Introduction</button>
+      <button class="tab-button" data-tab="tab-data">2. Data &amp; treatments</button>
+      <button class="tab-button" data-tab="tab-additional">3. Additional benefits &amp; costs</button>
+      <button class="tab-button" data-tab="tab-results">4. Results matrix</button>
+      <button class="tab-button" data-tab="tab-sim">5. Scenario simulations</button>
+      <button class="tab-button" data-tab="tab-ai">6. AI helper prompt</button>
+      <button class="tab-button" data-tab="tab-export">7. Export &amp; print</button>
     </nav>
 
     <main class="tab-container">
       <!-- TAB 1: INTRO -->
       <section id="tab-intro" class="tab-pane active">
         <div class="card">
-          <h2>How this tool works</h2>
+          <h2>What the Farming CBA Decision Tool 2 does</h2>
           <p>
-            This tool turns your Lockhart field trial dataset into a simple cost–benefit analysis,
-            comparing each soil amendment against the control. It is designed for an Excel-first
-            workflow: you upload the original dataset (no reformatting), the tool aggregates by
-            amendment, and the results matrix shows NPV, PV benefits, PV costs, BCR, ROI and ranking.
+            This decision aid turns the Lockhart field trial dataset into a simple but robust
+            cost–benefit analysis, comparing each soil amendment against the control. It keeps the
+            workflow Excel-first: you upload the original dataset (no reformatting), the tool
+            aggregates by amendment, and the results matrix shows NPV, PV benefits, PV costs,
+            benefit–cost ratio, ROI and ranking.
           </p>
 
-          <p>
-            The workflow is:
-          </p>
-          <ol class="steps-list">
-            <li><strong>Data &amp; Treatments:</strong> Upload the Lockhart data file
-              (<code>.xlsx</code> or <code>.csv</code>) exactly as provided. The tool automatically
-              finds the header row (<em>Amendment</em>, <em>Yield t/ha</em>,
-              <em>Treatment Input Cost Only /Ha</em>) and aggregates over all plots.</li>
-            <li><strong>Results matrix:</strong> Set the grain price, discount rate and time horizon.
-              The tool computes PV benefits, PV costs, NPV, BCR and ROI per treatment, all per hectare
-              and relative to the control.</li>
-            <li><strong>AI helper:</strong> Copy a ready-made prompt (with JSON summary of the results)
-              into your preferred AI assistant for a farmer-friendly interpretation.</li>
-            <li><strong>Export &amp; print:</strong> Export the results matrix to Excel or print a clean
-              results page to PDF via the browser print dialog.</li>
-          </ol>
+          <div class="intro-grid">
+            <div>
+              <h3>Workflow at a glance</h3>
+              <ol class="steps-list">
+                <li><strong>Upload data:</strong> Load the Lockhart dataset exactly as provided
+                    (<code>.xlsx</code> or <code>.csv</code>).</li>
+                <li><strong>Check treatments:</strong> The tool aggregates all plots by
+                    <em>Amendment</em> and estimates average yield and yearly treatment costs per
+                    hectare. You can adjust these and set capital costs.</li>
+                <li><strong>Review additional variables:</strong> Inspect extra agronomic indicators
+                    (biomass, plants per m², protein, etc.) and cost components (labour, machinery,
+                    transport) by treatment.</li>
+                <li><strong>Read the results matrix:</strong> See NPV, PV benefits, PV costs, BCR,
+                    ROI and ranking, with the control shown side by side for direct comparison.</li>
+                <li><strong>Stress-test scenarios:</strong> Use simple worst/base/best simulations
+                    with different grain prices and cost multipliers.</li>
+                <li><strong>Ask an AI:</strong> Copy a ready-made prompt containing a JSON summary of
+                    the results into Copilot, ChatGPT or similar to generate a detailed narrative
+                    and tables.</li>
+                <li><strong>Export:</strong> Export the results matrix to Excel or print to PDF for
+                    reports and decision meetings.</li>
+              </ol>
+            </div>
+            <div>
+              <h3>Key assumptions</h3>
+              <ul class="steps-list">
+                <li>Treatments are defined by the <strong>Amendment</strong> column.</li>
+                <li>Average <strong>Yield t/ha</strong> is used as the yield for each treatment.</li>
+                <li><strong>Treatment Input Cost Only /Ha</strong> is treated as the annual
+                    treatment cost per hectare.</li>
+                <li>The control is used as the baseline. PV benefits are the discounted value of
+                    extra yield revenue versus the control. PV costs are the discounted treatment
+                    costs plus any capital cost you enter.</li>
+                <li>You can override yields, costs, capital cost, and control choice to test
+                    scenarios or calibration assumptions.</li>
+              </ul>
+            </div>
+          </div>
 
           <div class="info-callout">
-            <h3>What the tool assumes</h3>
+            <h3>Decision support, not decision rules</h3>
             <p>
-              For each treatment, the tool:
-            </p>
-            <ul>
-              <li>Aggregates all plots with the same <strong>Amendment</strong> label.</li>
-              <li>Uses the average <strong>Yield t/ha</strong> as the treatment yield.</li>
-              <li>Uses the average <strong>Treatment Input Cost Only /Ha</strong> as the yearly
-                  treatment cost per hectare.</li>
-              <li>Treats the control as the baseline. PV benefits are the discounted value of extra
-                  yield revenue versus the control. PV costs are the discounted treatment costs plus
-                  any capital cost you specify.</li>
-            </ul>
-            <p>
-              You can override yields, costs and control choice in the <strong>Data &amp; Treatments</strong>
-              tab if you want to test alternative scenarios.
+              The tool is designed for decision support. It does not recommend a single best
+              treatment or apply fixed thresholds. Instead it shows which options look stronger or
+              weaker economically, why, and how changes in price, costs or agronomy could shift
+              results.
             </p>
           </div>
         </div>
@@ -86,9 +101,12 @@
           <p>
             Upload the original Lockhart field trial dataset
             (<code>.xlsx</code> or <code>.csv</code>) exactly as it is. The tool will automatically
-            locate the header row and read:
-            <strong>Amendment</strong>, <strong>Yield t/ha</strong>, and
+            locate the header row and read at least:
+            <strong>Amendment</strong>,
+            <strong>Yield t/ha</strong>, and
             <strong>Treatment Input Cost Only /Ha</strong>.
+            All other numeric columns (labour, machinery, transport, biomass, etc.) are also read
+            and can be viewed in the <strong>Additional benefits &amp; costs</strong> tab.
           </p>
 
           <div class="upload-row">
@@ -126,8 +144,25 @@
                 <tr>
                   <th>Treatment (Amendment)</th>
                   <th>Yield (t/ha)</th>
-                  <th>Capital cost ($/ha, year 0)</th>
-                  <th>Annual treatment cost ($/ha)</th>
+                  <th>
+                    Capital cost ($/ha, year 0)
+                    <span class="tooltip">
+                      <span class="tooltip-icon">?</span>
+                      <span class="tooltip-text">
+                        One-off investment per hectare at year 0 for this treatment.
+                      </span>
+                    </span>
+                  </th>
+                  <th>
+                    Annual treatment cost ($/ha)
+                    <span class="tooltip">
+                      <span class="tooltip-icon">?</span>
+                      <span class="tooltip-text">
+                        Average yearly cost per hectare of treatment inputs (for example,
+                        amendments, herbicides, labour).
+                      </span>
+                    </span>
+                  </th>
                   <th>Control?</th>
                 </tr>
               </thead>
@@ -138,19 +173,78 @@
           </div>
 
           <p class="text-muted">
-            Any changes here immediately update the CBA results in the next tab.
+            Any changes here immediately update the CBA results, simulations and AI prompt.
           </p>
         </div>
       </section>
 
-      <!-- TAB 3: RESULTS -->
+      <!-- TAB 3: ADDITIONAL BENEFITS & COSTS -->
+      <section id="tab-additional" class="tab-pane">
+        <div class="card">
+          <h2>Step 3: Additional benefits and cost components</h2>
+          <p>
+            All numeric variables in the dataset, beyond yield and the treatment input cost, are
+            summarised here by treatment. This helps interpret why some treatments perform better
+            or worse, and to see how labour, machinery and other components vary.
+          </p>
+
+          <p id="additional-empty" class="text-muted">
+            Upload the Lockhart dataset to see additional variables by treatment.
+          </p>
+
+          <div id="additional-benefits-wrapper" style="display:none;">
+            <h3>Additional agronomic indicators (potential benefits)</h3>
+            <p class="text-muted">
+              These variables often relate to plant performance, biomass or field conditions. They
+              are averaged across plots within each treatment.
+            </p>
+            <div class="table-wrapper">
+              <table class="data-table" id="additional-benefits-table"></table>
+            </div>
+          </div>
+
+          <div id="additional-costs-wrapper" style="display:none; margin-top:18px;">
+            <h3>Additional cost-related variables</h3>
+            <p class="text-muted">
+              These variables often relate to labour, machinery, transport or specific cost items.
+              They are averaged across plots within each treatment and can inform more detailed
+              costing.
+            </p>
+            <div class="table-wrapper">
+              <table class="data-table" id="additional-costs-table"></table>
+            </div>
+          </div>
+
+          <div id="additional-other-wrapper" style="display:none; margin-top:18px;">
+            <h3>Other numeric variables</h3>
+            <p class="text-muted">
+              These are other numeric fields that do not clearly fall into agronomic or cost
+              categories based on their column names. They are included for completeness.
+            </p>
+            <div class="table-wrapper">
+              <table class="data-table" id="additional-other-table"></table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: RESULTS MATRIX -->
       <section id="tab-results" class="tab-pane">
         <div class="card">
-          <h2>Step 3: Results matrix</h2>
+          <h2>Step 4: Results matrix</h2>
 
           <div class="results-config-grid">
             <div class="field-group">
-              <label for="price-per-tonne">Grain price ($ per tonne)</label>
+              <label for="price-per-tonne">
+                Grain price ($ per tonne)
+                <span class="tooltip">
+                  <span class="tooltip-icon">?</span>
+                  <span class="tooltip-text">
+                    Farm-gate price per tonne of grain. This is applied to yield differences
+                    between each treatment and the control.
+                  </span>
+                </span>
+              </label>
               <input
                 id="price-per-tonne"
                 type="number"
@@ -161,7 +255,15 @@
             </div>
 
             <div class="field-group">
-              <label for="discount-rate">Discount rate (% per year)</label>
+              <label for="discount-rate">
+                Discount rate (% per year)
+                <span class="tooltip">
+                  <span class="tooltip-icon">?</span>
+                  <span class="tooltip-text">
+                    Annual rate used to discount future benefits and costs back to year 0.
+                  </span>
+                </span>
+              </label>
               <input
                 id="discount-rate"
                 type="number"
@@ -173,7 +275,15 @@
             </div>
 
             <div class="field-group">
-              <label for="time-horizon">Time horizon (years)</label>
+              <label for="time-horizon">
+                Time horizon (years)
+                <span class="tooltip">
+                  <span class="tooltip-icon">?</span>
+                  <span class="tooltip-text">
+                    Number of years over which costs and yield differences are projected.
+                  </span>
+                </span>
+              </label>
               <input
                 id="time-horizon"
                 type="number"
@@ -191,7 +301,7 @@
           </p>
 
           <p id="results-empty" class="text-muted">
-            Upload the Lockhart dataset in the <strong>Data &amp; Treatments</strong> tab to see
+            Upload the Lockhart dataset in the <strong>Data &amp; treatments</strong> tab to see
             the results matrix.
           </p>
 
@@ -208,14 +318,106 @@
         </div>
       </section>
 
-      <!-- TAB 4: AI HELPER -->
+      <!-- TAB 5: SIMULATIONS -->
+      <section id="tab-sim" class="tab-pane">
+        <div class="card">
+          <h2>Step 5: Scenario simulations</h2>
+          <p>
+            This tab runs simple worst/base/best case simulations around your current scenario.
+            You can adjust how much grain prices and treatment costs move, and the tool will show
+            the NPV for each treatment in each scenario.
+          </p>
+
+          <div class="sim-config-grid">
+            <div class="field-group">
+              <label for="sim-low-price">
+                Low price (% of base)
+                <span class="tooltip">
+                  <span class="tooltip-icon">?</span>
+                  <span class="tooltip-text">
+                    Percentage of the main grain price used in the worst-case scenario.
+                  </span>
+                </span>
+              </label>
+              <input
+                id="sim-low-price"
+                type="number"
+                step="1"
+                min="0"
+                value="80"
+              />
+            </div>
+
+            <div class="field-group">
+              <label for="sim-high-price">
+                High price (% of base)
+              </label>
+              <input
+                id="sim-high-price"
+                type="number"
+                step="1"
+                min="0"
+                value="120"
+              />
+            </div>
+
+            <div class="field-group">
+              <label for="sim-high-cost">
+                High cost (% of base)
+                <span class="tooltip">
+                  <span class="tooltip-icon">?</span>
+                  <span class="tooltip-text">
+                    Percentage multiplier applied to annual treatment costs in the worst-case
+                    scenario.
+                  </span>
+                </span>
+              </label>
+              <input
+                id="sim-high-cost"
+                type="number"
+                step="1"
+                min="0"
+                value="120"
+              />
+            </div>
+
+            <div class="field-group">
+              <label for="sim-low-cost">
+                Low cost (% of base)
+              </label>
+              <input
+                id="sim-low-cost"
+                type="number"
+                step="1"
+                min="0"
+                value="80"
+              />
+            </div>
+          </div>
+
+          <p id="sim-empty" class="text-muted">
+            Upload the Lockhart dataset to run simulations.
+          </p>
+
+          <div id="sim-results-wrapper" class="table-wrapper" style="display:none;">
+            <table id="sim-results-table" class="data-table"></table>
+          </div>
+
+          <p class="text-muted">
+            Worst-case: low price and high cost. Best-case: high price and low cost. Base case uses
+            the price and costs from the main scenario. All NPVs are per hectare.
+          </p>
+        </div>
+      </section>
+
+      <!-- TAB 6: AI HELPER -->
       <section id="tab-ai" class="tab-pane">
         <div class="card">
-          <h2>Step 4: AI helper prompt</h2>
+          <h2>Step 6: AI helper prompt</h2>
           <p>
             The text below is a ready-made prompt containing the current scenario and results in
-            JSON form. Copy and paste it into your preferred AI assistant to generate a
-            farmer-friendly interpretation of the CBA.
+            JSON form. Copy and paste it into Copilot, ChatGPT or another AI assistant to generate a
+            farmer-friendly interpretation, a policy-oriented brief, and summary tables.
           </p>
 
           <div class="ai-actions">
@@ -223,16 +425,16 @@
             <span id="copy-status" class="text-muted"></span>
           </div>
 
-          <textarea id="ai-prompt" class="ai-textarea" rows="20" spellcheck="false">
+          <textarea id="ai-prompt" class="ai-textarea" rows="22" spellcheck="false">
 Upload your dataset and configure the scenario to generate an AI interpretation prompt.
           </textarea>
         </div>
       </section>
 
-      <!-- TAB 5: EXPORT -->
+      <!-- TAB 7: EXPORT -->
       <section id="tab-export" class="tab-pane">
         <div class="card">
-          <h2>Step 5: Export &amp; print</h2>
+          <h2>Step 7: Export &amp; print</h2>
           <p>
             Use these options to move the results into your reporting workflow.
           </p>
