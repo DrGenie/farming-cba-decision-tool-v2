@@ -1,4 +1,4 @@
-/* styles.css – Farming CBA Decision Tool 2 (fully functional, print-safe) */
+/* styles.css – Farming CBA Decision Tool 2 (fully functional, print-safe, extended) */
 
 :root {
   --color-bg: #f3f4f6;
@@ -136,10 +136,17 @@ body {
   font-size: 1.1rem;
 }
 
-/* Steps list */
+/* Intro layout */
+
+.intro-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.6fr);
+  gap: 16px;
+  margin-top: 10px;
+}
 
 .steps-list {
-  margin-top: 8px;
+  margin-top: 6px;
   padding-left: 1.1rem;
 }
 
@@ -245,7 +252,7 @@ body {
   color: var(--color-pill-control-text);
 }
 
-/* Results */
+/* Results inputs */
 
 .results-config-grid {
   display: grid;
@@ -330,7 +337,7 @@ body {
   top: 125%;
   left: 0;
   z-index: 10;
-  width: 240px;
+  width: 260px;
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--color-border-strong);
@@ -436,7 +443,23 @@ body {
   display: block;
 }
 
+/* Simulations */
+
+.sim-config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
 /* Responsive */
+
+@media (max-width: 900px) {
+  .intro-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 768px) {
   .app-header {
@@ -448,9 +471,19 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .sim-config-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .data-table th,
   .data-table td {
     font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .sim-config-grid {
+    grid-template-columns: 1fr;
   }
 }
 
