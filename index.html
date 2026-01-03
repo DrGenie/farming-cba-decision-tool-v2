@@ -8,9 +8,9 @@
   <meta name="description" content="Excel-first farm cost–benefit analysis tool with control vs treatments comparison." />
   <link rel="stylesheet" href="./styles.css" />
 
-  <!-- Optional libs (used by app.js if present) -->
-  <!-- SheetJS for Excel import/export -->
+  <!-- SheetJS (Excel import/export). If offline, download this file and host locally. -->
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="./app.js"></script>
 </head>
 
 <body>
@@ -31,7 +31,7 @@
       <div class="topbar__right">
         <div class="chip" id="dataStateChip" title="Data status">
           <span class="dot" aria-hidden="true"></span>
-          <span id="dataStateText">Data loaded</span>
+          <span id="dataStateText">Ready</span>
         </div>
 
         <button class="btn btn--ghost" id="copyResultsBtnTop" type="button" title="Copy results table to clipboard">
@@ -45,7 +45,7 @@
 
     <div class="shell">
       <aside class="sidebar" aria-label="Primary">
-        <nav class="nav">
+        <nav class="nav" id="navTabs">
           <button class="tab-btn is-active" type="button" data-tab="home" id="tabBtnHome">
             <span class="tab-btn__icon" aria-hidden="true">🏠</span>
             <span class="tab-btn__text">Home</span>
@@ -79,9 +79,7 @@
         <div class="sidebar__footer">
           <div class="mini">
             <div class="mini__label">Scenario</div>
-            <select id="scenarioSelect" class="input" aria-label="Select scenario">
-              <!-- app.js populates -->
-            </select>
+            <select id="scenarioSelect" class="input" aria-label="Select scenario"></select>
           </div>
 
           <div class="mini">
@@ -105,8 +103,8 @@
             <div class="panel__head">
               <h1 class="h1">Snapshot view</h1>
               <p class="muted">
-                The Results tab shows a vertical comparison table where rows are economic indicators and columns are
-                the control and each treatment. Use Data to upload Excel and Settings to adjust discounting.
+                Use the Results tab for a vertical comparison table (rows = metrics, columns = control + treatments).
+                Use Data to upload Excel. Settings changes apply immediately.
               </p>
             </div>
 
@@ -115,10 +113,11 @@
                 <h2 class="h2">Excel-first workflow</h2>
                 <ol class="steps">
                   <li>Download the Excel template.</li>
-                  <li>Fill or edit your treatments and time-series inputs.</li>
-                  <li>Upload the Excel file back into the tool.</li>
-                  <li>Check validation messages and view results.</li>
+                  <li>Edit treatments and yearly cashflows.</li>
+                  <li>Upload the file back into the tool.</li>
+                  <li>Export the results to Excel or copy into Word.</li>
                 </ol>
+
                 <div class="stack">
                   <button class="btn btn--primary" id="downloadTemplateBtn" type="button">Download template (Excel)</button>
                   <div class="row row--gap">
@@ -130,19 +129,20 @@
               </div>
 
               <div class="card">
-                <h2 class="h2">What you will see</h2>
-                <ul class="bullets">
-                  <li><strong>NPV</strong> = PV benefits − PV costs</li>
-                  <li><strong>PV benefits</strong> and <strong>PV costs</strong> are discounted sums over time</li>
-                  <li><strong>BCR</strong> = PV benefits ÷ PV costs</li>
-                  <li><strong>ROI</strong> = NPV ÷ PV costs</li>
-                  <li><strong>Ranking</strong> compares treatments (control is shown alongside)</li>
-                </ul>
-                <div class="divider"></div>
+                <h2 class="h2">Quick navigation</h2>
                 <div class="row row--gap">
                   <button class="btn btn--soft" id="goResultsBtn" type="button">Go to Results</button>
                   <button class="btn btn--ghost" id="goDataBtn" type="button">Go to Data</button>
                 </div>
+
+                <div class="divider"></div>
+
+                <h2 class="h2">Definitions used</h2>
+                <ul class="bullets">
+                  <li><strong>NPV</strong> = PV benefits − PV costs</li>
+                  <li><strong>BCR</strong> = PV benefits ÷ PV costs</li>
+                  <li><strong>ROI</strong> = NPV ÷ PV costs</li>
+                </ul>
               </div>
             </div>
           </div>
@@ -153,7 +153,7 @@
           <div class="panel">
             <div class="panel__head">
               <h1 class="h1">Data</h1>
-              <p class="muted">Upload Excel, preview parsed content, and check validation. All buttons are live.</p>
+              <p class="muted">Upload Excel, preview parsed content, and check validation.</p>
             </div>
 
             <div class="grid grid--2">
@@ -175,7 +175,7 @@
               <div class="card">
                 <h2 class="h2">Scenario-specific template</h2>
                 <p class="muted">
-                  If your app.js supports scenario templates, pick a scenario in the sidebar then download a pre-filled template.
+                  Choose a scenario in the sidebar, then download a pre-filled template for that scenario.
                 </p>
                 <div class="row row--gap">
                   <button class="btn btn--soft" id="downloadScenarioTemplateBtn" type="button">
@@ -192,12 +192,12 @@
                     <div class="modal__head">
                       <div>
                         <div class="h2">Excel mapping</div>
-                        <div class="muted">Column names expected by the tool.</div>
+                        <div class="muted">Expected sheets and columns.</div>
                       </div>
                       <button class="icon-btn" type="button" data-close-modal="mappingModal" aria-label="Close">✕</button>
                     </div>
                     <div class="modal__body">
-                      <div id="mappingTableWrap" class="table-wrap">
+                      <div class="table-wrap" id="mappingTableWrap">
                         <table class="table" id="mappingTable" aria-label="Mapping table">
                           <thead>
                             <tr>
@@ -206,9 +206,7 @@
                               <th>Description</th>
                             </tr>
                           </thead>
-                          <tbody>
-                            <!-- app.js populates -->
-                          </tbody>
+                          <tbody></tbody>
                         </table>
                       </div>
                     </div>
@@ -232,9 +230,7 @@
                       <th>Notes</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <!-- app.js populates -->
-                  </tbody>
+                  <tbody></tbody>
                 </table>
               </div>
             </div>
@@ -246,7 +242,7 @@
           <div class="panel">
             <div class="panel__head">
               <h1 class="h1">Settings</h1>
-              <p class="muted">Discount rate, horizon, currency, and basic assumptions.</p>
+              <p class="muted">Discount rate, horizon, currency.</p>
             </div>
 
             <div class="grid grid--2">
@@ -274,15 +270,14 @@
                   </div>
 
                   <div class="callout callout--info" id="configNote">
-                    Tip: After changing settings, go to Results and export to Excel for reporting.
+                    Tip: use Sensitivity to see how rankings change with discount rate.
                   </div>
                 </div>
               </div>
 
               <div class="card">
-                <h2 class="h2">Assumptions</h2>
+                <h2 class="h2">Assumptions (read-only)</h2>
                 <div class="stack">
-                  <div class="callout callout--warning" id="assumptionWarnings" hidden></div>
                   <div class="table-wrap">
                     <table class="table" id="assumptionsTable" aria-label="Assumptions table">
                       <thead>
@@ -292,15 +287,14 @@
                           <th>Notes</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        <!-- app.js populates -->
-                      </tbody>
+                      <tbody></tbody>
                     </table>
                   </div>
                   <div class="row row--gap">
                     <button class="btn btn--soft" id="editAssumptionsBtn" type="button">Edit assumptions</button>
                     <button class="btn btn--ghost" id="restoreAssumptionsBtn" type="button">Restore defaults</button>
                   </div>
+                  <div class="callout callout--warning" id="assumptionWarnings" hidden></div>
                 </div>
               </div>
             </div>
@@ -313,10 +307,7 @@
           <div class="panel">
             <div class="panel__head">
               <h1 class="h1">Results</h1>
-              <p class="muted">
-                Vertical comparison table: indicators (rows) vs control and treatments (columns). Use Export to download Excel
-                or copy to Word.
-              </p>
+              <p class="muted">Rows are economic indicators; columns are control and treatments.</p>
             </div>
 
             <div class="toolbar">
@@ -347,19 +338,15 @@
                 <table class="table table--results" id="resultsTable" aria-label="Results comparison table">
                   <thead>
                     <tr id="resultsHeaderRow">
-                      <!-- app.js populates -->
                       <th class="sticky-col">Indicator</th>
                       <th>Control</th>
                     </tr>
                   </thead>
-                  <tbody id="resultsBody">
-                    <!-- app.js populates -->
-                  </tbody>
+                  <tbody id="resultsBody"></tbody>
                 </table>
               </div>
-
               <div class="note" id="resultsFootnote">
-                Values are in present value terms unless stated otherwise. Ranking is computed within the selected scenario.
+                Values are present value (PV) terms unless stated otherwise.
               </div>
             </div>
 
@@ -374,14 +361,13 @@
                         <th>PV benefits</th>
                         <th>PV costs</th>
                         <th>NPV</th>
+                        <th>ΔNPV vs control</th>
                       </tr>
                     </thead>
-                    <tbody><!-- app.js --></tbody>
+                    <tbody></tbody>
                   </table>
                 </div>
-                <div class="callout callout--info" id="driversBox">
-                  <!-- app.js -->
-                </div>
+                <div class="callout callout--info" id="driversBox"></div>
               </div>
             </div>
 
@@ -393,7 +379,7 @@
           <div class="panel">
             <div class="panel__head">
               <h1 class="h1">Sensitivity</h1>
-              <p class="muted">Test how results change under alternative discount rates (and other options if enabled in app.js).</p>
+              <p class="muted">Runs a discount-rate sweep and records the best treatment by NPV.</p>
             </div>
 
             <div class="card">
@@ -417,16 +403,18 @@
                 <table class="table" id="sensTable" aria-label="Sensitivity results table">
                   <thead>
                     <tr>
-                      <th>Discount</th>
-                      <th>Best treatment</th>
+                      <th>Discount (%)</th>
+                      <th>Best (by NPV)</th>
                       <th>Control NPV</th>
                       <th>Best NPV</th>
-                      <th>Notes</th>
+                      <th>ΔBest vs control</th>
                     </tr>
                   </thead>
-                  <tbody><!-- app.js --></tbody>
+                  <tbody></tbody>
                 </table>
               </div>
+
+              <div class="callout callout--warning" id="sensWarn" hidden></div>
             </div>
           </div>
         </section>
@@ -442,13 +430,13 @@
             <div class="grid grid--2">
               <div class="card">
                 <h2 class="h2">Excel</h2>
-                <p class="muted">Creates a clean sheet suitable for sharing and archiving.</p>
+                <p class="muted">Creates a clean sheet suitable for sharing.</p>
                 <button class="btn btn--primary" id="exportExcelBtn3" type="button">Export results to Excel</button>
               </div>
 
               <div class="card">
                 <h2 class="h2">Word / reporting</h2>
-                <p class="muted">Copy the results table to your clipboard or download a Word-friendly file.</p>
+                <p class="muted">Copy the results table or download a Word-friendly file.</p>
                 <div class="stack">
                   <button class="btn btn--soft" id="copyResultsBtn2" type="button">Copy results table</button>
                   <button class="btn btn--ghost" id="exportWordBtn" type="button">Download Word-friendly HTML</button>
@@ -468,27 +456,22 @@
           <div class="panel">
             <div class="panel__head">
               <h1 class="h1">Help</h1>
-              <p class="muted">Quick troubleshooting for inactive buttons, data issues, and exports.</p>
+              <p class="muted">If anything appears inactive, check the console for errors and re-load the page.</p>
             </div>
 
             <div class="card">
-              <h2 class="h2">If something looks inactive</h2>
+              <h2 class="h2">Common issues</h2>
               <ul class="bullets">
-                <li>Make sure <code>app.js</code> is loaded (check the browser console for errors).</li>
-                <li>Open the Data tab and re-upload your Excel file.</li>
-                <li>Click Recalculate in the sidebar.</li>
+                <li>If Excel buttons do nothing, ensure the SheetJS library loads (network access or local copy).</li>
+                <li>If uploads fail, confirm your file uses the template sheets and column names.</li>
+                <li>Click Reset then Recalculate after changing settings or scenarios.</li>
               </ul>
-
               <div class="divider"></div>
-
-              <h2 class="h2">Definitions used in Results</h2>
+              <h2 class="h2">Definitions</h2>
               <div class="table-wrap">
                 <table class="table" aria-label="Definitions table">
                   <thead>
-                    <tr>
-                      <th>Metric</th>
-                      <th>Meaning</th>
-                    </tr>
+                    <tr><th>Metric</th><th>Meaning</th></tr>
                   </thead>
                   <tbody>
                     <tr><td>NPV</td><td>PV benefits − PV costs</td></tr>
@@ -502,13 +485,11 @@
             </div>
           </div>
         </section>
+
       </main>
     </div>
 
     <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
   </div>
-
-  <!-- App script -->
-  <script defer src="./app.js"></script>
 </body>
 </html>
