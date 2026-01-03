@@ -100,7 +100,7 @@ body[data-theme="worldbank-dark"]{
 }
 .skip-link:focus{left:0.75rem;outline:none;}
 
-/* Toast root + toasts (app.js friendly) */
+/* Toast root + toast UI (works with app.js) */
 #toast-root{
   position:fixed;
   inset:0;
@@ -395,7 +395,6 @@ body[data-theme="worldbank-dark"] .btn:hover{background:rgba(96,165,250,0.14);bo
 
 /* Lists */
 .item-list{display:flex;flex-direction:column;gap:0.7rem;}
-/* Optional dynamic item blocks (safe defaults if app.js uses these) */
 .item{
   border-radius:14px;
   border:1px solid rgba(209,213,219,0.70);
@@ -412,12 +411,23 @@ body[data-theme="worldbank-dark"] .item{
 .item-title{font-weight:800;}
 .item-actions{display:flex;gap:0.45rem;flex-wrap:wrap;align-items:center;}
 .item-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0.8rem;margin-top:0.7rem;}
-@media (max-width: 900px){
-  .item-row{grid-template-columns:repeat(2,minmax(0,1fr));}
+@media (max-width: 900px){ .item-row{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@media (max-width: 720px){ .item-row{grid-template-columns:1fr;} }
+
+/* Badges for control */
+.badge{
+  display:inline-flex;align-items:center;gap:0.35rem;
+  padding:0.24rem 0.55rem;border-radius:999px;
+  border:1px solid rgba(209,213,219,0.75);
+  background:rgba(255,255,255,0.7);
+  font-size:0.8rem;font-weight:750;
 }
-@media (max-width: 720px){
-  .item-row{grid-template-columns:1fr;}
+body[data-theme="worldbank-dark"] .badge{
+  background:rgba(2,6,23,0.26);
+  border-color:rgba(148,163,184,0.18);
 }
+.badge.primary{border-color:rgba(29,79,145,0.25);background:var(--color-primary-soft);color:var(--color-primary);}
+.badge.success{border-color:rgba(21,128,61,0.35);background:var(--color-success-soft);color:rgba(21,128,61,0.95);}
 
 /* Metrics */
 .metrics-grid .field label{margin-bottom:0.1rem;}
@@ -513,8 +523,6 @@ body[data-theme="worldbank-dark"] .summary-table thead th{
 }
 .summary-table tbody tr:nth-child(2n) td{background:rgba(243,244,246,0.55);}
 body[data-theme="worldbank-dark"] .summary-table tbody tr:nth-child(2n) td{background:rgba(2,6,23,0.20);}
-
-/* Table inputs (discount schedule etc) */
 .summary-table input,
 .summary-table select{
   padding:0.5rem 0.55rem;
@@ -576,10 +584,8 @@ body[data-theme="worldbank-dark"] .matrix-table .sticky-col{
 body[data-theme="worldbank-dark"] .matrix-table tbody td.sticky-col{
   color:rgba(226,232,240,0.92);
 }
-
 .matrix-table .col-control{background:rgba(224,236,255,0.55);}
 body[data-theme="worldbank-dark"] .matrix-table .col-control{background:rgba(96,165,250,0.10);}
-
 .matrix-table .neg{color:rgba(185,28,28,0.95);font-weight:700;}
 .matrix-table .pos{color:rgba(21,128,61,0.95);font-weight:700;}
 .matrix-table .rank-cell{font-weight:800;text-align:center;}
@@ -655,7 +661,7 @@ body[data-theme="worldbank-dark"] .status-box{
 }
 .footer-right{display:flex;gap:0.55rem;flex-wrap:wrap;align-items:center;}
 
-/* Tooltips: anchored near the labelled element */
+/* Tooltips */
 [data-tooltip]{position:relative;cursor:help;}
 [data-tooltip]::after{
   content:attr(data-tooltip);
