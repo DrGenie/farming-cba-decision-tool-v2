@@ -1,624 +1,280 @@
 <!-- index.html -->
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light" />
-    <title>Farming CBA Decision Aid</title>
-
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-
-  <body>
-    <a class="skip-link" href="#main">Skip to content</a>
-
-    <header class="app-header" role="banner">
-      <div class="header-left">
-        <button
-          class="icon-btn"
-          id="btnNav"
-          type="button"
-          aria-label="Toggle navigation"
-          aria-controls="sidebar"
-          aria-expanded="true"
-        >
-          <span aria-hidden="true">☰</span>
-        </button>
-
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">CBA</div>
-          <div class="brand-text">
-            <div class="brand-title">Farming CBA Decision Aid</div>
-            <div class="brand-subtitle" id="headerStatus">Ready</div>
-          </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Farming CBA Decision Aid</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <!-- SheetJS (XLSX) for client-side Excel import -->
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__left">
+      <div class="brand">
+        <div class="brand__mark" aria-hidden="true">F</div>
+        <div class="brand__text">
+          <div class="brand__title">Farming CBA Decision Aid</div>
+          <div class="brand__subtitle">Import trial data, compare amendments, run simple gross margin scenarios</div>
         </div>
       </div>
-
-      <div class="header-right">
-        <div class="header-actions">
-          <button class="btn btn-ghost" id="btnReset" type="button">Reset</button>
-          <button class="btn btn-ghost" id="btnImport" type="button">Import</button>
-          <button class="btn btn-primary" id="btnExport" type="button">Export</button>
-        </div>
-
-        <div class="header-meta">
-          <span class="pill" id="pillScenario">Scenario: Baseline</span>
-          <span class="pill pill-soft" id="pillCurrency">AUD</span>
-        </div>
-      </div>
-    </header>
-
-    <div class="app-shell">
-      <aside class="sidebar" id="sidebar" role="navigation" aria-label="Primary">
-        <div class="sidebar-inner">
-          <div class="sidebar-section">
-            <div class="sidebar-title">Navigation</div>
-            <nav class="navlist" id="navTabs" aria-label="Sections">
-              <button class="nav-item is-active" id="tab-intro" type="button" data-tab="intro" aria-controls="panel-intro" aria-selected="true">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Intro</span>
-              </button>
-              <button class="nav-item" id="tab-inputs" type="button" data-tab="inputs" aria-controls="panel-inputs" aria-selected="false">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Inputs</span>
-              </button>
-              <button class="nav-item" id="tab-costs" type="button" data-tab="costs" aria-controls="panel-costs" aria-selected="false">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Costs</span>
-              </button>
-              <button class="nav-item" id="tab-benefits" type="button" data-tab="benefits" aria-controls="panel-benefits" aria-selected="false">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Benefits</span>
-              </button>
-              <button class="nav-item" id="tab-results" type="button" data-tab="results" aria-controls="panel-results" aria-selected="false">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Results</span>
-              </button>
-              <button class="nav-item" id="tab-sensitivity" type="button" data-tab="sensitivity" aria-controls="panel-sensitivity" aria-selected="false">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Sensitivity</span>
-              </button>
-              <button class="nav-item" id="tab-appendix" type="button" data-tab="appendix" aria-controls="panel-appendix" aria-selected="false">
-                <span class="nav-dot" aria-hidden="true"></span>
-                <span>Technical Appendix</span>
-              </button>
-            </nav>
-          </div>
-
-          <div class="sidebar-section">
-            <div class="sidebar-title">Quick settings</div>
-
-            <div class="field">
-              <label class="label" for="selScenario">Scenario</label>
-              <select class="select" id="selScenario">
-                <option value="baseline" selected>Baseline</option>
-                <option value="optimistic">Optimistic</option>
-                <option value="pessimistic">Pessimistic</option>
-              </select>
-              <div class="help">Switch assumptions quickly; results update instantly.</div>
-            </div>
-
-            <div class="field">
-              <label class="label" for="selDiscount">Discount rate</label>
-              <div class="input-row">
-                <input class="input" id="selDiscount" type="number" min="0" max="30" step="0.1" value="7" />
-                <span class="suffix">%</span>
-              </div>
-              <div class="help">Used for NPV and discounting annual streams.</div>
-            </div>
-
-            <div class="field">
-              <label class="label" for="selHorizon">Time horizon</label>
-              <div class="input-row">
-                <input class="input" id="selHorizon" type="number" min="1" max="50" step="1" value="10" />
-                <span class="suffix">years</span>
-              </div>
-              <div class="help">Number of years used for projections.</div>
-            </div>
-          </div>
-
-          <div class="sidebar-footer">
-            <div class="tiny muted">Version <span id="appVersion">1.1</span></div>
-          </div>
-        </div>
-      </aside>
-
-      <main class="main" id="main" role="main">
-        <div class="content">
-          <div class="topbar">
-            <div class="breadcrumbs" id="breadcrumbs">
-              <span class="crumb">Farming CBA</span>
-              <span class="crumb-sep" aria-hidden="true">›</span>
-              <span class="crumb is-current" id="crumbCurrent">Intro</span>
-            </div>
-
-            <div class="topbar-right">
-              <button class="btn btn-ghost btn-sm" id="btnHelp" type="button">Help</button>
-              <button class="btn btn-ghost btn-sm" id="btnTour" type="button">Guided tour</button>
-            </div>
-          </div>
-
-          <section class="kpi-strip" aria-label="Key results">
-            <div class="kpi">
-              <div class="kpi-label">Net Present Value (NPV)</div>
-              <div class="kpi-value" id="kpiNPV">—</div>
-              <div class="kpi-note" id="kpiNPVNote">Discounted</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-label">Benefit–Cost Ratio (BCR)</div>
-              <div class="kpi-value" id="kpiBCR">—</div>
-              <div class="kpi-note" id="kpiBCRNote">Total benefits / total costs</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-label">Return on Investment (ROI)</div>
-              <div class="kpi-value" id="kpiROI">—</div>
-              <div class="kpi-note" id="kpiROINote">Relative to costs</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-label">Payback period</div>
-              <div class="kpi-value" id="kpiPayback">—</div>
-              <div class="kpi-note" id="kpiPaybackNote">Years</div>
-            </div>
-          </section>
-
-          <section class="panel-wrap" id="panels">
-            <section class="panel is-active" id="panel-intro" data-panel="intro" aria-labelledby="tab-intro">
-              <div class="panel-head">
-                <h1 class="h1">Overview</h1>
-                <p class="lead">
-                  Configure costs and benefits, view NPV, ROI and BCR, and stress-test assumptions with scenario and sensitivity tools.
-                </p>
-              </div>
-
-              <div class="grid-2">
-                <article class="card">
-                  <div class="card-title">How it works</div>
-                  <div class="card-body">
-                    <p class="p">
-                      Add costs and benefits as annual streams. Each line can start in a given year and run for a chosen duration. The tool computes year-by-year
-                      streams and discounted outputs using the discount rate and time horizon.
-                    </p>
-                    <div class="callouts">
-                      <div class="callout">
-                        <div class="callout-title">Tip</div>
-                        <div class="callout-body">Start with conservative assumptions, then explore optimistic and pessimistic scenarios.</div>
-                      </div>
-                      <div class="callout callout-soft">
-                        <div class="callout-title">Outputs</div>
-                        <div class="callout-body">NPV, BCR, ROI, payback period, plus exportable tables.</div>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-
-                <article class="card">
-                  <div class="card-title">Project metadata</div>
-                  <div class="card-body">
-                    <div class="form-grid">
-                      <div class="field">
-                        <label class="label" for="projName">Project name</label>
-                        <input class="input" id="projName" type="text" placeholder="e.g., Soil carbon practice change" />
-                      </div>
-                      <div class="field">
-                        <label class="label" for="projRegion">Region</label>
-                        <input class="input" id="projRegion" type="text" placeholder="e.g., NSW, Riverina" />
-                      </div>
-                      <div class="field">
-                        <label class="label" for="projOwner">Owner</label>
-                        <input class="input" id="projOwner" type="text" placeholder="e.g., Farm business / cooperative" />
-                      </div>
-                      <div class="field">
-                        <label class="label" for="projCurrency">Currency</label>
-                        <select class="select" id="projCurrency">
-                          <option value="AUD" selected>AUD</option>
-                          <option value="USD">USD</option>
-                          <option value="EUR">EUR</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="row-actions">
-                      <button class="btn btn-primary" id="btnSaveMeta" type="button">Save metadata</button>
-                      <button class="btn btn-ghost" id="btnLoadExampleIntro" type="button">Load example</button>
-                    </div>
-                  </div>
-                </article>
-              </div>
-
-              <article class="card">
-                <div class="card-title">Next steps</div>
-                <div class="card-body">
-                  <div class="steps">
-                    <div class="step">
-                      <div class="step-num">1</div>
-                      <div class="step-text">Go to <strong>Inputs</strong> to set horizon, discount rate, and baseline quantities.</div>
-                    </div>
-                    <div class="step">
-                      <div class="step-num">2</div>
-                      <div class="step-text">Add <strong>Costs</strong> and <strong>Benefits</strong> streams (one-off or annual).</div>
-                    </div>
-                    <div class="step">
-                      <div class="step-num">3</div>
-                      <div class="step-text">Review <strong>Results</strong> and stress-test using <strong>Sensitivity</strong>.</div>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            </section>
-
-            <section class="panel" id="panel-inputs" data-panel="inputs" aria-labelledby="tab-inputs">
-              <div class="panel-head">
-                <h1 class="h1">Inputs</h1>
-                <p class="lead">Core assumptions used across all computations.</p>
-              </div>
-
-              <div class="grid-2">
-                <article class="card">
-                  <div class="card-title">Time and discounting</div>
-                  <div class="card-body">
-                    <div class="form-grid">
-                      <div class="field">
-                        <label class="label" for="inpDiscount">Discount rate</label>
-                        <div class="input-row">
-                          <input class="input" id="inpDiscount" type="number" min="0" max="30" step="0.1" value="7" />
-                          <span class="suffix">%</span>
-                        </div>
-                      </div>
-                      <div class="field">
-                        <label class="label" for="inpHorizon">Horizon</label>
-                        <div class="input-row">
-                          <input class="input" id="inpHorizon" type="number" min="1" max="50" step="1" value="10" />
-                          <span class="suffix">years</span>
-                        </div>
-                      </div>
-                      <div class="field">
-                        <label class="label" for="inpStartYear">Start year</label>
-                        <input class="input" id="inpStartYear" type="number" min="1990" max="2100" step="1" value="2026" />
-                      </div>
-                      <div class="field">
-                        <label class="label" for="inpInflation">Inflation (optional)</label>
-                        <div class="input-row">
-                          <input class="input" id="inpInflation" type="number" min="-5" max="30" step="0.1" value="0" />
-                          <span class="suffix">%</span>
-                        </div>
-                        <div class="help">If set above 0, streams are escalated each year before discounting.</div>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-
-                <article class="card">
-                  <div class="card-title">Baseline quantities</div>
-                  <div class="card-body">
-                    <div class="form-grid">
-                      <div class="field">
-                        <label class="label" for="inpArea">Area</label>
-                        <div class="input-row">
-                          <input class="input" id="inpArea" type="number" min="0" step="0.01" value="0" />
-                          <span class="suffix">ha</span>
-                        </div>
-                      </div>
-                      <div class="field">
-                        <label class="label" for="inpYield">Baseline yield</label>
-                        <div class="input-row">
-                          <input class="input" id="inpYield" type="number" min="0" step="0.01" value="0" />
-                          <span class="suffix">t/ha</span>
-                        </div>
-                      </div>
-                      <div class="field">
-                        <label class="label" for="inpPrice">Baseline price</label>
-                        <div class="input-row">
-                          <input class="input" id="inpPrice" type="number" min="0" step="0.01" value="0" />
-                          <span class="suffix" id="currencySuffix">AUD</span>
-                        </div>
-                      </div>
-                      <div class="field">
-                        <label class="label" for="inpAdoption">Adoption (scales streams)</label>
-                        <div class="input-row">
-                          <input class="input" id="inpAdoption" type="number" min="0" max="100" step="1" value="100" />
-                          <span class="suffix">%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="row-actions">
-                      <button class="btn btn-primary" id="btnSaveInputs" type="button">Save inputs</button>
-                      <button class="btn btn-ghost" id="btnLoadExample" type="button">Load example</button>
-                    </div>
-                  </div>
-                </article>
-              </div>
-            </section>
-
-            <section class="panel" id="panel-costs" data-panel="costs" aria-labelledby="tab-costs">
-              <div class="panel-head">
-                <h1 class="h1">Costs</h1>
-                <p class="lead">Add fixed, variable, and ongoing costs. Amounts are annual unless duration is 1 and the line is treated as one-year.</p>
-              </div>
-
-              <article class="card">
-                <div class="card-title">Cost items</div>
-                <div class="card-body">
-                  <div class="toolbar">
-                    <button class="btn btn-primary" id="btnAddCost" type="button">Add cost</button>
-                    <button class="btn btn-ghost" id="btnClearCosts" type="button">Clear</button>
-                    <div class="spacer"></div>
-                    <div class="tiny muted" id="costHint">Year can be an absolute year (e.g., 2027) or an offset (0..horizon-1).</div>
-                  </div>
-
-                  <div class="table-wrap">
-                    <table class="table" id="tblCosts">
-                      <thead>
-                        <tr>
-                          <th>Item</th>
-                          <th>Type</th>
-                          <th class="num">Year</th>
-                          <th class="num">Annual amount</th>
-                          <th class="num">Duration</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
-                </div>
-              </article>
-            </section>
-
-            <section class="panel" id="panel-benefits" data-panel="benefits" aria-labelledby="tab-benefits">
-              <div class="panel-head">
-                <h1 class="h1">Benefits</h1>
-                <p class="lead">Add benefits as annual streams. Separate market and non-market benefits for transparency.</p>
-              </div>
-
-              <article class="card">
-                <div class="card-title">Benefit items</div>
-                <div class="card-body">
-                  <div class="toolbar">
-                    <button class="btn btn-primary" id="btnAddBenefit" type="button">Add benefit</button>
-                    <button class="btn btn-ghost" id="btnClearBenefits" type="button">Clear</button>
-                    <div class="spacer"></div>
-                    <div class="tiny muted" id="benefitHint">Amounts are scaled by adoption unless adoption is 100%.</div>
-                  </div>
-
-                  <div class="table-wrap">
-                    <table class="table" id="tblBenefits">
-                      <thead>
-                        <tr>
-                          <th>Item</th>
-                          <th>Category</th>
-                          <th class="num">Year</th>
-                          <th class="num">Annual amount</th>
-                          <th class="num">Duration</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
-                </div>
-              </article>
-            </section>
-
-            <section class="panel" id="panel-results" data-panel="results" aria-labelledby="tab-results">
-              <div class="panel-head">
-                <h1 class="h1">Results</h1>
-                <p class="lead">Summary and discounted streams. Export tables for reporting.</p>
-              </div>
-
-              <div class="grid-2">
-                <article class="card">
-                  <div class="card-title">Summary</div>
-                  <div class="card-body">
-                    <dl class="dl" id="dlSummary">
-                      <div class="dl-row">
-                        <dt>Total discounted benefits</dt>
-                        <dd id="sumBenefits">—</dd>
-                      </div>
-                      <div class="dl-row">
-                        <dt>Total discounted costs</dt>
-                        <dd id="sumCosts">—</dd>
-                      </div>
-                      <div class="dl-row">
-                        <dt>NPV</dt>
-                        <dd id="sumNPV">—</dd>
-                      </div>
-                      <div class="dl-row">
-                        <dt>BCR</dt>
-                        <dd id="sumBCR">—</dd>
-                      </div>
-                      <div class="dl-row">
-                        <dt>ROI</dt>
-                        <dd id="sumROI">—</dd>
-                      </div>
-                      <div class="dl-row">
-                        <dt>Payback period</dt>
-                        <dd id="sumPayback">—</dd>
-                      </div>
-                    </dl>
-
-                    <div class="divider"></div>
-
-                    <div class="row-actions">
-                      <button class="btn btn-primary" id="btnRecalc" type="button">Recalculate</button>
-                      <button class="btn btn-ghost" id="btnExportResults" type="button">Export results (CSV)</button>
-                    </div>
-                  </div>
-                </article>
-
-                <article class="card">
-                  <div class="card-title">Streams chart</div>
-                  <div class="card-body">
-                    <div class="chart" id="chartStreams" aria-label="Streams chart area"></div>
-                    <div class="tiny muted">Benefits, costs, and net are shown over the horizon. Values are not discounted in the plot; discounting is used in KPI metrics.</div>
-                  </div>
-                </article>
-              </div>
-
-              <article class="card">
-                <div class="card-title">Year-by-year table</div>
-                <div class="card-body">
-                  <div class="table-wrap">
-                    <table class="table" id="tblStreams">
-                      <thead>
-                        <tr>
-                          <th class="num">Year</th>
-                          <th class="num">Benefits</th>
-                          <th class="num">Costs</th>
-                          <th class="num">Net</th>
-                          <th class="num">Discount factor</th>
-                          <th class="num">Discounted net</th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
-                </div>
-              </article>
-            </section>
-
-            <section class="panel" id="panel-sensitivity" data-panel="sensitivity" aria-labelledby="tab-sensitivity">
-              <div class="panel-head">
-                <h1 class="h1">Sensitivity</h1>
-                <p class="lead">One-way sensitivity analysis. Choose a parameter, range, and steps, then export the table.</p>
-              </div>
-
-              <div class="grid-2">
-                <article class="card">
-                  <div class="card-title">One-way sensitivity</div>
-                  <div class="card-body">
-                    <div class="form-grid">
-                      <div class="field">
-                        <label class="label" for="sensParam">Parameter</label>
-                        <select class="select" id="sensParam">
-                          <option value="discount" selected>Discount rate (%)</option>
-                          <option value="benefits">Benefits scale (%)</option>
-                          <option value="costs">Costs scale (%)</option>
-                          <option value="adoption">Adoption (%)</option>
-                        </select>
-                        <div class="help" id="sensHelp">
-                          Discount rate is interpreted as a percentage. Scale parameters are interpreted as percent of baseline (e.g., 80..120).
-                        </div>
-                      </div>
-                      <div class="field">
-                        <label class="label" for="sensLow">Low</label>
-                        <input class="input" id="sensLow" type="number" step="0.1" value="5" />
-                      </div>
-                      <div class="field">
-                        <label class="label" for="sensHigh">High</label>
-                        <input class="input" id="sensHigh" type="number" step="0.1" value="10" />
-                      </div>
-                      <div class="field">
-                        <label class="label" for="sensSteps">Steps</label>
-                        <input class="input" id="sensSteps" type="number" min="3" max="50" step="1" value="11" />
-                      </div>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="row-actions">
-                      <button class="btn btn-primary" id="btnRunSensitivity" type="button">Run sensitivity</button>
-                      <button class="btn btn-ghost" id="btnExportSensitivity" type="button">Export (CSV)</button>
-                    </div>
-                  </div>
-                </article>
-
-                <article class="card">
-                  <div class="card-title">Sensitivity chart and table</div>
-                  <div class="card-body">
-                    <div class="chart" id="chartSensitivity" aria-label="Sensitivity chart area"></div>
-
-                    <div class="table-wrap">
-                      <table class="table" id="tblSensitivity">
-                        <thead>
-                          <tr>
-                            <th class="num">Value</th>
-                            <th class="num">NPV</th>
-                            <th class="num">BCR</th>
-                            <th class="num">ROI</th>
-                          </tr>
-                        </thead>
-                        <tbody></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </article>
-              </div>
-            </section>
-
-            <section class="panel" id="panel-appendix" data-panel="appendix" aria-labelledby="tab-appendix">
-              <div class="panel-head">
-                <h1 class="h1">Technical Appendix</h1>
-                <p class="lead">Definitions and formulas used by this tool.</p>
-              </div>
-
-              <article class="card">
-                <div class="card-title">Formulas and conventions</div>
-                <div class="card-body">
-                  <div class="prose" id="appendixContent">
-                    <p class="p">
-                      Each cost or benefit line is treated as an annual stream beginning in its start year and continuing for the specified duration. The annual amount
-                      is escalated by inflation if inflation is non-zero.
-                    </p>
-                    <p class="p">
-                      The discount factor in year <em>t</em> (with <em>t</em> starting at 0 in the start year) is
-                      <strong>DF(t) = 1 / (1 + r)<sup>t</sup></strong>, where <em>r</em> is the discount rate.
-                    </p>
-                    <p class="p"><strong>NPV</strong> is the sum of discounted net benefits: <strong>NPV = Σ DF(t) × (B(t) − C(t))</strong>.</p>
-                    <p class="p"><strong>BCR</strong> is <strong>Σ DF(t) × B(t) / Σ DF(t) × C(t)</strong>, when discounted costs are positive.</p>
-                    <p class="p"><strong>ROI</strong> is <strong>(Σ DF(t) × (B(t) − C(t))) / (Σ DF(t) × C(t))</strong>, when discounted costs are positive.</p>
-                    <p class="p">
-                      Adoption is applied as a multiplicative factor to both benefits and costs streams (adoption% / 100). If you prefer adoption to scale only a subset of
-                      lines, duplicate your baseline and adjust amounts accordingly.
-                    </p>
-                    <p class="p">
-                      Payback period is the first year where cumulative discounted net benefits are non-negative. If this never occurs within the horizon, payback is reported
-                      as “No payback within horizon”.
-                    </p>
-                  </div>
-                </div>
-              </article>
-            </section>
-          </section>
-        </div>
-      </main>
     </div>
 
-    <div class="modal-backdrop" id="modalBackdrop" hidden></div>
+    <div class="app-header__right">
+      <div class="pill" id="datasetPill" title="Dataset status">No data loaded</div>
+      <button class="btn btn--ghost" id="btnReset" type="button" title="Reset to initial state">Reset</button>
+    </div>
+  </header>
 
-    <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
-      <div class="modal-card" role="document">
-        <div class="modal-head">
-          <div class="modal-title" id="modalTitle">Modal</div>
-          <button class="icon-btn" id="btnModalClose" type="button" aria-label="Close modal">✕</button>
+  <nav class="tabs" role="tablist" aria-label="Tool sections">
+    <button class="tab is-active" role="tab" aria-selected="true" aria-controls="panel-import" id="tab-import" data-tab="import" type="button">Import</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-treatments" id="tab-treatments" data-tab="treatments" type="button">Treatments</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-scenarios" id="tab-scenarios" data-tab="scenarios" type="button">Scenario</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-outputs" id="tab-outputs" data-tab="outputs" type="button">Export</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-help" id="tab-help" data-tab="help" type="button">Help</button>
+  </nav>
+
+  <main class="main">
+    <!-- Import -->
+    <section class="panel is-active" role="tabpanel" id="panel-import" aria-labelledby="tab-import" data-panel="import">
+      <div class="grid grid--2">
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">Import Excel</h2>
+            <div class="card__subtitle">Choose an .xlsx file. The tool will auto-detect the header row and key fields.</div>
+          </div>
+
+          <div class="card__body">
+            <div class="stack">
+              <div class="row">
+                <label class="label" for="fileInput">Excel file (.xlsx)</label>
+                <input id="fileInput" class="file" type="file" accept=".xlsx,.xls" />
+              </div>
+
+              <div class="row row--wrap">
+                <button class="btn" id="btnLoadBundledXlsx" type="button">Load bundled XLSX (if present)</button>
+                <button class="btn btn--secondary" id="btnLoadEmbedded" type="button">Load embedded Lockhart sample</button>
+              </div>
+
+              <div class="callout" id="importCallout">
+                <div class="callout__title">Tip</div>
+                <div class="callout__text">
+                  If you want the page to auto-load your uploaded file when hosted, place the Excel in the same folder as these files and name it <code>data.xlsx</code>.
+                  The “Load bundled XLSX” button tries <code>./data.xlsx</code> first, then <code>./Data for Lockhart-FA-031225 (1).xlsx</code>.
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="kpi-grid">
+                <div class="kpi">
+                  <div class="kpi__label">Rows</div>
+                  <div class="kpi__value" id="kpiRows">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi__label">Treatments</div>
+                  <div class="kpi__value" id="kpiTreatments">0</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi__label">Yield field</div>
+                  <div class="kpi__value kpi__value--mono" id="kpiYieldKey">—</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi__label">Cost field</div>
+                  <div class="kpi__value kpi__value--mono" id="kpiCostKey">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="modal-body" id="modalBody"></div>
-        <div class="modal-foot" id="modalFoot">
-          <button class="btn btn-ghost" id="btnModalCancel" type="button">Cancel</button>
-          <button class="btn btn-primary" id="btnModalOk" type="button">OK</button>
+
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">Data preview</h2>
+            <div class="card__subtitle">First rows from the imported sheet.</div>
+          </div>
+          <div class="card__body">
+            <div class="muted" id="previewNote">No data yet. Import an Excel file or load the embedded sample.</div>
+            <div class="table-wrap" id="previewTableWrap" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="card__header">
+          <h2 class="card__title">Detected columns</h2>
+          <div class="card__subtitle">Useful when your workbook has duplicated or messy headers.</div>
+        </div>
+        <div class="card__body">
+          <div class="chips" id="columnsChips"></div>
         </div>
       </div>
     </section>
 
-    <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+    <!-- Treatments -->
+    <section class="panel" role="tabpanel" id="panel-treatments" aria-labelledby="tab-treatments" data-panel="treatments">
+      <div class="card">
+        <div class="card__header">
+          <h2 class="card__title">Treatment comparison</h2>
+          <div class="card__subtitle">Means by treatment (default grouping uses <code>Amendment</code>, then falls back to <code>Trt</code>).</div>
+        </div>
 
-    <input id="fileImport" type="file" accept="application/json" hidden />
+        <div class="card__body">
+          <div class="toolbar">
+            <div class="toolbar__group">
+              <label class="label" for="baselineSelect">Baseline</label>
+              <select id="baselineSelect" class="select"></select>
+            </div>
 
-    <script type="module" src="app.js"></script>
-    <noscript>
-      <div class="noscript">This tool requires JavaScript to run.</div>
-    </noscript>
-  </body>
+            <div class="toolbar__group">
+              <label class="label" for="sortSelect">Sort</label>
+              <select id="sortSelect" class="select">
+                <option value="delta_gm_desc">Incremental gross margin (desc)</option>
+                <option value="gm_desc">Gross margin (desc)</option>
+                <option value="yield_desc">Yield (desc)</option>
+                <option value="cost_asc">Cost (asc)</option>
+                <option value="name_asc">Name (A→Z)</option>
+              </select>
+            </div>
+
+            <div class="toolbar__group toolbar__group--wide">
+              <label class="label" for="searchInput">Search</label>
+              <input id="searchInput" class="input" type="text" placeholder="Filter treatments…" />
+            </div>
+
+            <div class="toolbar__spacer"></div>
+
+            <div class="toolbar__group">
+              <button class="btn btn--secondary" id="btnToScenario" type="button">Adjust scenario</button>
+            </div>
+          </div>
+
+          <div class="table-wrap" id="treatmentsTableWrap"></div>
+
+          <div class="note" id="treatmentsNote">
+            Gross margin = Yield × Price − Total cost. Incremental gross margin is computed relative to the chosen baseline using group means.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scenario -->
+    <section class="panel" role="tabpanel" id="panel-scenarios" aria-labelledby="tab-scenarios" data-panel="scenarios">
+      <div class="grid grid--2">
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">Scenario settings</h2>
+            <div class="card__subtitle">Applies instantly to the treatment table and exports.</div>
+          </div>
+
+          <div class="card__body">
+            <div class="form-grid">
+              <div class="row">
+                <label class="label" for="priceInput">Grain price ($/t)</label>
+                <input class="input" id="priceInput" type="number" min="0" step="1" />
+                <div class="hint">Used with the detected yield field (t/ha) to compute revenue per hectare.</div>
+              </div>
+
+              <div class="row">
+                <label class="label" for="yieldScaleInput">Yield scale</label>
+                <select class="select" id="yieldScaleInput">
+                  <option value="1">Use as-is</option>
+                  <option value="0.1">× 0.1</option>
+                  <option value="10">× 10</option>
+                </select>
+                <div class="hint">If your yield column is recorded in different units.</div>
+              </div>
+
+              <div class="row">
+                <label class="label" for="costScaleInput">Cost scale</label>
+                <select class="select" id="costScaleInput">
+                  <option value="1">Use as-is</option>
+                  <option value="0.01">× 0.01</option>
+                  <option value="100">× 100</option>
+                </select>
+                <div class="hint">If your cost column is recorded in cents or other scaling.</div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="row row--wrap">
+              <button class="btn" id="btnBackToTreatments" type="button">Back to treatments</button>
+              <button class="btn btn--ghost" id="btnResetScenario" type="button">Reset scenario defaults</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">Sanity checks</h2>
+            <div class="card__subtitle">Quick diagnostics to avoid silent parsing mistakes.</div>
+          </div>
+          <div class="card__body">
+            <div class="sanity" id="sanityBox">
+              <div class="muted">Load data to see diagnostics.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Export -->
+    <section class="panel" role="tabpanel" id="panel-outputs" aria-labelledby="tab-outputs" data-panel="outputs">
+      <div class="card">
+        <div class="card__header">
+          <h2 class="card__title">Export</h2>
+          <div class="card__subtitle">Download processed data and summaries for reporting.</div>
+        </div>
+
+        <div class="card__body">
+          <div class="row row--wrap">
+            <button class="btn" id="btnExportProcessedCsv" type="button">Download processed rows (CSV)</button>
+            <button class="btn btn--secondary" id="btnExportSummaryCsv" type="button">Download treatment summary (CSV)</button>
+            <button class="btn btn--ghost" id="btnExportJson" type="button">Download state (JSON)</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="muted" id="exportNote">
+            Exports use the current scenario (price and scaling). If nothing downloads, check your browser’s pop-up/download permissions.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Help -->
+    <section class="panel" role="tabpanel" id="panel-help" aria-labelledby="tab-help" data-panel="help">
+      <div class="card">
+        <div class="card__header">
+          <h2 class="card__title">Help</h2>
+          <div class="card__subtitle">How the tool reads your workbook and what to do if detection is off.</div>
+        </div>
+        <div class="card__body">
+          <div class="prose">
+            <p>
+              This tool imports the first worksheet in your Excel file, finds the densest row among the first 60 rows (the likely header row),
+              deduplicates repeated header names, and reads subsequent rows until the sheet becomes mostly empty.
+            </p>
+            <p>
+              The treatment grouping key is chosen by preference: <code>Amendment</code>, then <code>Treatment</code>/<code>Trt</code>, then the first non-empty text column.
+              Yield is detected by matching headers like <code>Yield</code> (prefer <code>Yield t/ha</code>), and total cost by preference for a header named <code>|</code>,
+              otherwise the numeric “cost-like” column with the strongest coverage.
+            </p>
+            <p>
+              If your workbook uses different names, the detected keys will show on the Import tab. If yield or cost looks wrong, use the scaling controls in the Scenario tab
+              (for unit mismatches) or adjust your Excel headers and re-import.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden>
+    <div class="toast__content" id="toastText"></div>
+  </div>
+</body>
 </html>
