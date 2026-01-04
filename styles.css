@@ -63,6 +63,14 @@ body[data-theme="worldbank-light"]{
   text-rendering: optimizeLegibility;
 }
 
+/* Links baseline */
+a{ color: inherit; }
+a:focus-visible{
+  outline:none;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.22);
+  border-radius: 10px;
+}
+
 /* =========================================================
    Global containers
    ========================================================= */
@@ -200,10 +208,12 @@ body[data-theme="worldbank-light"]{
 }
 
 /* =========================================================
-   Tabs
+   Tabs (defensive z-index so nothing blocks clicks)
    ========================================================= */
 
 #tabBar.tabs-nav{
+  position: relative;
+  z-index: 50; /* keeps tab buttons above panels/inner content */
   display:flex;
   flex-wrap:wrap;
   gap:0.4rem;
@@ -225,6 +235,7 @@ body[data-theme="worldbank-light"]{
   padding: 0.5rem 0.85rem;
   border-radius: var(--r-pill);
   cursor:pointer;
+  pointer-events: auto;
   transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
   white-space:nowrap;
 }
@@ -244,6 +255,11 @@ body[data-theme="worldbank-light"]{
 .tab-link:focus-visible{
   outline:none;
   box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+}
+
+#tabPanels{
+  position: relative;
+  z-index: 1;
 }
 
 #tabPanels .tab-panel{
@@ -278,6 +294,12 @@ body[data-theme="worldbank-light"]{
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
 }
 
+.card-row{
+  display:flex;
+  flex-direction:column;
+  gap:0.2rem;
+}
+
 .h2{ font-size:1.35rem; margin:0 0 0.35rem; color:var(--text); font-weight:800; }
 .h3{ font-size:1.05rem; margin:0 0 0.35rem; color:var(--text); font-weight:800; }
 .h4{ font-size:0.98rem; margin:0 0 0.35rem; color:var(--text); font-weight:800; }
@@ -295,6 +317,13 @@ p{ line-height: 1.55; }
 }
 .prose p{ margin:0 0 0.7rem; }
 .prose p:last-child{ margin-bottom:0; }
+
+hr{
+  border:0;
+  height:1px;
+  background: rgba(226,232,240,0.95);
+  margin: 0.95rem 0;
+}
 
 /* =========================================================
    Panel headers and toolbars
@@ -687,7 +716,7 @@ p{ line-height: 1.55; }
 }
 
 #resComparisonTable.comparison-table thead th:nth-child(2){
-  left: 240px; /* updated for first column width; see below */
+  left: 240px; /* matches first column width below */
   z-index: 28;
 }
 
@@ -723,7 +752,6 @@ p{ line-height: 1.55; }
   max-width: 190px;
 }
 
-/* Make delta columns visually distinct when JS adds classes */
 .delta-cell{
   font-weight:900;
 }
@@ -773,6 +801,17 @@ p{ line-height: 1.55; }
 }
 
 /* =========================================================
+   Introduction actions
+   ========================================================= */
+
+.intro-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:0.55rem;
+  margin-top: 0.75rem;
+}
+
+/* =========================================================
    Footer
    ========================================================= */
 
@@ -789,6 +828,9 @@ p{ line-height: 1.55; }
   color: var(--muted-2);
   font-size:0.88rem;
 }
+
+.footer-left{ display:flex; align-items:center; gap:0.5rem; }
+.footer-right{ display:flex; align-items:center; gap:0.5rem; }
 
 .footer-right a.nav-link{
   padding:0.3rem 0.65rem;
@@ -823,7 +865,6 @@ p{ line-height: 1.55; }
 
 /* =========================================================
    Toast host (#toastHost) bottom-right
-   - JS creates children; CSS targets children generically
    ========================================================= */
 
 #toastHost{
@@ -861,8 +902,6 @@ p{ line-height: 1.55; }
   color: var(--muted);
 }
 
-/* Allow JS to mark toast types via inline style or extra classes
-   without relying on class selectors (rule-safe). */
 #toastHost > div[data-kind="success"]{
   border-color: rgba(22,101,52,0.22);
   background: rgba(234,247,238,0.98);
@@ -881,7 +920,7 @@ p{ line-height: 1.55; }
 }
 
 /* =========================================================
-   Responsive enhancements (scale up)
+   Responsive enhancements
    ========================================================= */
 
 @media (min-width: 640px){
