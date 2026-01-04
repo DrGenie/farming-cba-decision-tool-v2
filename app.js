@@ -2966,1217 +2966,308 @@
     if ($("#rFin")) $("#rFin").value = model.risk.fin;
     if ($("#rMan")) $("#rMan").value = model.risk.man;
 
-    if ($("#simN")) $("#simN").value = model.sim.n;
-    if ($("#targetBCR")) $("#targetBCR").value = model.sim.targetBCR;
-    if ($("#bcrMode")) $("#bcrMode").value = model.sim.bcrMode;
-    if ($("#simBcrTargetLabel")) $("#simBcrTargetLabel").textContent = model.sim.targetBCR;
-
-    if ($("#simVarPct")) $("#simVarPct").value = String(model.sim.variationPct || 20);
-    if ($("#simVaryOutputs")) $("#simVaryOutputs").value = model.sim.varyOutputs ? "true" : "false";
-    if ($("#simVaryTreatCosts")) $("#simVaryTreatCosts").value = model.sim.varyTreatCosts ? "true" : "false";
-    if ($("#simVaryInputCosts")) $("#simVaryInputCosts").value = model.sim.varyInputCosts ? "true" : "false";
-
-    if ($("#systemType")) $("#systemType").value = model.outputsMeta.systemType || "single";
-    if ($("#outputAssumptions")) $("#outputAssumptions").value = model.outputsMeta.assumptions || "";
-
-    // Calibration controls (optional)
+    // Calibration
     if ($("#calibrationMode")) $("#calibrationMode").value = model.calibration.mode || "model";
-    if ($("#pricePerTonne")) $("#pricePerTonne").value = model.calibration.pricePerTonne != null ? model.calibration.pricePerTonne : "";
-    if ($("#persistenceYears")) $("#persistenceYears").value = model.calibration.persistenceYears != null ? model.calibration.persistenceYears : "";
-    if ($("#controlHint")) $("#controlHint").value = model.calibration.controlNameHint || "control";
+    if ($("#pricePerTonne")) $("#pricePerTonne").value = model.calibration.pricePerTonne ?? "";
+    if ($("#persistenceYears")) $("#persistenceYears").value = model.calibration.persistenceYears ?? "";
+    if ($("#controlNameHint")) $("#controlNameHint").value = model.calibration.controlNameHint || "control";
 
-    const sched = model.time.discountSchedule || DEFAULT_DISCOUNT_SCHEDULE;
-    $$("input[data-disc-period]").forEach(inp => {
-      const idx = +inp.dataset.discPeriod;
-      const scenario = inp.dataset.scenario;
-      const row = sched[idx];
-      if (!row) return;
-      let v = "";
-      if (scenario === "low") v = row.low;
-      else if (scenario === "base") v = row.base;
-      else if (scenario === "high") v = row.high;
-      inp.value = v ?? "";
-    });
+    // Simulation
+    if ($("#simN")) $("#simN").value = model.sim.n;
+    if ($("#simSeed")) $("#simSeed").value = model.sim.seed ?? "";
+    if ($("#simVariationPct")) $("#simVariationPct").value = model.sim.variationPct;
+    if ($("#simVaryOutputs")) $("#simVaryOutputs").checked = !!model.sim.varyOutputs;
+    if ($("#simVaryTreatCosts")) $("#simVaryTreatCosts").checked = !!model.sim.varyTreatCosts;
+    if ($("#simBcrMode")) $("#simBcrMode").value = model.sim.bcrMode || "all";
+
+    // Sensitivity
+    if ($("#sensPriceMultipliers")) $("#sensPriceMultipliers").value = (model.sensitivity.priceMultipliers || []).join(", ");
+    if ($("#sensPersistenceYears")) $("#sensPersistenceYears").value = (model.sensitivity.persistenceYears || []).join(", ");
+    if ($("#sensRecurrenceMultipliers")) $("#sensRecurrenceMultipliers").value = (model.sensitivity.recurrenceMultipliers || []).join(", ");
+    if ($("#sensDiscountRates")) $("#sensDiscountRates").value =
+      model.sensitivity.discountRatesPct && model.sensitivity.discountRatesPct.length
+        ? model.sensitivity.discountRatesPct.join(", ")
+        : "";
   }
 
-  let debTimer = null;
-  function calcAndRenderDebounced() {
-    clearTimeout(debTimer);
-    debTimer = setTimeout(calcAndRender, 120);
-  }
-
-  function bindBasics() {
-    setBasicsFieldsFromModel();
-    initActions();
-
-    const calcRiskBtn = $("#calcCombinedRisk");
-    if (calcRiskBtn) {
-      calcRiskBtn.addEventListener("click", e => {
-        e.stopPropagation();
-        const r =
-          1 -
-          (1 - num("#rTech")) *
-            (1 - num("#rNonCoop")) *
-            (1 - num("#rSocio")) *
-            (1 - num("#rFin")) *
-            (1 - num("#rMan"));
-        if ($("#combinedRiskOut")) $("#combinedRiskOut").textContent = "Combined: " + (r * 100).toFixed(2) + "%";
-        if ($("#riskBase")) $("#riskBase").value = r.toFixed(3);
-        model.risk.base = r;
-        calcAndRender();
-        showToast("Combined risk updated from component risks.");
-      });
+  function ensureToastRoot() {
+    if (!document.getElementById("toast-root")) {
+      const div = document.createElement("div");
+      div.id = "toast-root";
+      document.body.appendChild(div);
     }
-
-    const addCostBtn = $("#addCost");
-    if (addCostBtn) {
-      addCostBtn.addEventListener("click", e => {
-        e.stopPropagation();
-        const c = {
-          id: uid(),
-          label: "New cost",
-          type: "annual",
-          category: "Services",
-          annual: 0,
-          startYear: model.time.startYear,
-          endYear: model.time.startYear,
-          capital: 0,
-          year: model.time.startYear,
-          constrained: true,
-          depMethod: "none",
-          depLife: 5,
-          depRate: 30
-        };
-        model.otherCosts.push(c);
-        renderCosts();
-        calcAndRender();
-        showToast("New cost item added.");
-      });
-    }
-
-    document.addEventListener("input", e => {
-      const t = e.target;
-      if (!t) return;
-
-      if (t.dataset && t.dataset.discPeriod !== undefined) {
-        const idx = +t.dataset.discPeriod;
-        const scenario = t.dataset.scenario;
-        if (!model.time.discountSchedule) model.time.discountSchedule = JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_SCHEDULE));
-        const row = model.time.discountSchedule[idx];
-        if (row && scenario) {
-          const val = +t.value;
-          if (scenario === "low") row.low = val;
-          else if (scenario === "base") row.base = val;
-          else if (scenario === "high") row.high = val;
-          calcAndRenderDebounced();
-        }
-        return;
-      }
-
-      const id = t.id;
-      if (!id) return;
-
-      switch (id) {
-        case "projectName": model.project.name = t.value; break;
-        case "projectLead": model.project.lead = t.value; break;
-        case "analystNames": model.project.analysts = t.value; break;
-        case "projectTeam": model.project.team = t.value; break;
-        case "projectSummary": model.project.summary = t.value; break;
-        case "projectObjectives": model.project.objectives = t.value; break;
-        case "projectActivities": model.project.activities = t.value; break;
-        case "stakeholderGroups": model.project.stakeholders = t.value; break;
-        case "lastUpdated": model.project.lastUpdated = t.value; break;
-        case "projectGoal": model.project.goal = t.value; break;
-        case "withProject": model.project.withProject = t.value; break;
-        case "withoutProject": model.project.withoutProject = t.value; break;
-        case "organisation": model.project.organisation = t.value; break;
-        case "contactEmail": model.project.contactEmail = t.value; break;
-        case "contactPhone": model.project.contactPhone = t.value; break;
-
-        case "startYear": model.time.startYear = +t.value; break;
-        case "projectStartYear": model.time.projectStartYear = +t.value; break;
-        case "years": model.time.years = +t.value; break;
-        case "discBase": model.time.discBase = +t.value; break;
-        case "discLow": model.time.discLow = +t.value; break;
-        case "discHigh": model.time.discHigh = +t.value; break;
-        case "mirrFinance": model.time.mirrFinance = +t.value; break;
-        case "mirrReinvest": model.time.mirrReinvest = +t.value; break;
-
-        case "adoptBase": model.adoption.base = +t.value; break;
-        case "adoptLow": model.adoption.low = +t.value; break;
-        case "adoptHigh": model.adoption.high = +t.value; break;
-
-        case "riskBase": model.risk.base = +t.value; break;
-        case "riskLow": model.risk.low = +t.value; break;
-        case "riskHigh": model.risk.high = +t.value; break;
-        case "rTech": model.risk.tech = +t.value; break;
-        case "rNonCoop": model.risk.nonCoop = +t.value; break;
-        case "rSocio": model.risk.socio = +t.value; break;
-        case "rFin": model.risk.fin = +t.value; break;
-        case "rMan": model.risk.man = +t.value; break;
-
-        case "simN": model.sim.n = +t.value; break;
-        case "targetBCR":
-          model.sim.targetBCR = +t.value;
-          if ($("#simBcrTargetLabel")) $("#simBcrTargetLabel").textContent = t.value;
-          break;
-        case "bcrMode": model.sim.bcrMode = t.value; break;
-        case "randSeed": model.sim.seed = t.value ? +t.value : null; break;
-
-        case "simVarPct": model.sim.variationPct = +t.value || 20; break;
-        case "simVaryOutputs": model.sim.varyOutputs = t.value === "true"; break;
-        case "simVaryTreatCosts": model.sim.varyTreatCosts = t.value === "true"; break;
-        case "simVaryInputCosts": model.sim.varyInputCosts = t.value === "true"; break;
-
-        case "systemType": model.outputsMeta.systemType = t.value; break;
-        case "outputAssumptions": model.outputsMeta.assumptions = t.value; break;
-
-        // Calibration
-        case "calibrationMode":
-          model.calibration.mode = t.value;
-          if (model.calibration.mode === "trial") applyTrialCalibrationToModel();
-          renderAll();
-          calcAndRender();
-          showToast("Calibration mode updated.");
-          return;
-        case "pricePerTonne":
-          model.calibration.pricePerTonne = t.value === "" ? null : +t.value;
-          break;
-        case "persistenceYears":
-          model.calibration.persistenceYears = t.value === "" ? null : +t.value;
-          break;
-        case "controlHint":
-          model.calibration.controlNameHint = t.value;
-          break;
-
-        // Sensitivity settings (optional)
-        case "sensPriceMultipliers":
-          model.sensitivity.priceMultipliers = String(t.value || "")
-            .split(/[,\s]+/g)
-            .map(x => +x)
-            .filter(x => Number.isFinite(x));
-          break;
-        case "sensDiscountRates":
-          model.sensitivity.discountRatesPct = String(t.value || "")
-            .split(/[,\s]+/g)
-            .map(x => +x)
-            .filter(x => Number.isFinite(x));
-          break;
-        case "sensPersistenceYears":
-          model.sensitivity.persistenceYears = String(t.value || "")
-            .split(/[,\s]+/g)
-            .map(x => +x)
-            .filter(x => Number.isFinite(x))
-            .map(x => Math.max(0, Math.floor(x)));
-          break;
-        case "sensRecurrenceMultipliers":
-          model.sensitivity.recurrenceMultipliers = String(t.value || "")
-            .split(/[,\s]+/g)
-            .map(x => +x)
-            .filter(x => Number.isFinite(x));
-          break;
-      }
-
-      calcAndRenderDebounced();
-    });
-
-    const saveProjectBtn = $("#saveProject");
-    if (saveProjectBtn) {
-      saveProjectBtn.addEventListener("click", e => {
-        e.stopPropagation();
-        const data = JSON.stringify(model, null, 2);
-        downloadFile(
-          "cba_" + (model.project.name || "project").replace(/\s+/g, "_") + ".json",
-          data,
-          "application/json"
-        );
-        showToast("Project JSON downloaded.");
-      });
-    }
-
-    const loadProjectBtn = $("#loadProject");
-    const loadFileInput = $("#loadFile");
-    if (loadProjectBtn && loadFileInput) {
-      loadProjectBtn.addEventListener("click", e => {
-        e.stopPropagation();
-        loadFileInput.click();
-      });
-      loadFileInput.addEventListener("change", async e => {
-        const file = e.target.files && e.target.files[0];
-        if (!file) return;
-        const text = await file.text();
-        try {
-          const obj = JSON.parse(text);
-          Object.keys(model).forEach(k => delete model[k]);
-          Object.assign(model, obj);
-
-          if (!model.time.discountSchedule) model.time.discountSchedule = JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_SCHEDULE));
-          if (!model.sensitivity) model.sensitivity = JSON.parse(JSON.stringify(DEFAULT_SENSITIVITY));
-          initTreatmentDeltasAndRecurrence();
-
-          renderAll();
-          setBasicsFieldsFromModel();
-          calcAndRender();
-          showToast("Project JSON loaded and applied.");
-        } catch (err) {
-          alert("Invalid JSON file.");
-          console.error(err);
-        } finally {
-          e.target.value = "";
-        }
-      });
-    }
-
-    // Existing CSV/PDF exports (kept)
-    const exportCsvBtn = $("#exportCsv");
-    const exportCsvFootBtn = $("#exportCsvFoot");
-    if (exportCsvBtn) exportCsvBtn.addEventListener("click", e => { e.stopPropagation(); exportAllCsvLegacy(); });
-    if (exportCsvFootBtn) exportCsvFootBtn.addEventListener("click", e => { e.stopPropagation(); exportAllCsvLegacy(); });
-
-    const exportPdfBtn = $("#exportPdf");
-    const exportPdfFootBtn = $("#exportPdfFoot");
-    if (exportPdfBtn) exportPdfBtn.addEventListener("click", e => { e.stopPropagation(); exportPdf(); showToast("Print dialog opened for PDF export."); });
-    if (exportPdfFootBtn) exportPdfFootBtn.addEventListener("click", e => { e.stopPropagation(); exportPdf(); showToast("Print dialog opened for PDF export."); });
-
-    // Excel parse/import retained but expanded for csv/tsv/txt as well
-    const parseExcelBtn = $("#parseExcel");
-    const importExcelBtn = $("#importExcel");
-    if (parseExcelBtn) parseExcelBtn.addEventListener("click", e => { e.stopPropagation(); handleParseExcelOrText(); });
-    if (importExcelBtn) importExcelBtn.addEventListener("click", e => { e.stopPropagation(); commitParsedToImport(); });
-
-    const downloadTemplateBtn = $("#downloadTemplate");
-    const downloadSampleBtn = $("#downloadSample");
-    if (downloadTemplateBtn) downloadTemplateBtn.addEventListener("click", e => { e.stopPropagation(); downloadExcelTemplate(); });
-    if (downloadSampleBtn) downloadSampleBtn.addEventListener("click", e => { e.stopPropagation(); downloadSampleDataset(); });
-
-    const startBtn = $("#startBtn");
-    if (startBtn) {
-      startBtn.addEventListener("click", e => {
-        e.stopPropagation();
-        switchTab("project");
-        showToast("Welcome. Start with the Project tab.");
-      });
-    }
-
-    const openCopilotBtns = $$("#openCopilot");
-    if (openCop
-        case "outputAssumptions":
-          model.outputsMeta.assumptions = t.value;
-          break;
-
-        // Calibration (optional)
-        case "calibrationMode":
-          model.calibration.mode = t.value || "model";
-          // If switching to model mode, keep current model.treatments as-is.
-          // If switching to trial mode, applyTrialCalibrationToModel() will be called via render/calc.
-          break;
-        case "pricePerTonne":
-          model.calibration.pricePerTonne = t.value === "" ? null : parseNumber(t.value);
-          break;
-        case "persistenceYears":
-          model.calibration.persistenceYears = t.value === "" ? null : parseNumber(t.value);
-          break;
-        case "controlHint":
-        case "controlNameHint":
-          model.calibration.controlNameHint = String(t.value || "control");
-          break;
-
-        default:
-          // Ignore unknown IDs
-          return;
-      }
-
-      // Most inputs affect calculations; use debounce to keep UI responsive.
-      calcAndRenderDebounced();
-    });
-
-    // Dynamic lists (outputs, treatments, benefits, costs)
-    initDynamicListHandlers();
-    initResultsFilters();
-    initScenarioBindings();
-    initExportBindings();
-    initAiBriefingBindings();
-    initImportPipelineBindings();
   }
 
-  // =========================
-  // 14) RENDERERS: OUTPUTS, TREATMENTS, BENEFITS, COSTS
-  // =========================
-  function renderOutputs() {
-    const root =
-      $("#outputsList") ||
-      $("#outputsTable") ||
-      $("#outputs") ||
-      $("#outputsPanel");
-    if (!root) return;
-
-    root.innerHTML = "";
-
-    const header = document.createElement("div");
-    header.className = "panel-header";
-    header.innerHTML = `
-      <div class="panel-title">Outputs</div>
-      <div class="panel-actions">
-        <button type="button" class="btn" id="addOutputInline">Add output</button>
-      </div>
-    `;
-    root.appendChild(header);
-
-    const table = document.createElement("table");
-    table.className = "summary-table";
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Unit</th>
-          <th>Value</th>
-          <th>Source</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${model.outputs
-          .map(o => {
-            return `
-              <tr>
-                <td><input class="input" data-entity="output" data-id="${esc(o.id)}" data-field="name" value="${esc(o.name)}" /></td>
-                <td><input class="input" data-entity="output" data-id="${esc(o.id)}" data-field="unit" value="${esc(o.unit)}" /></td>
-                <td><input class="input" data-entity="output" data-id="${esc(o.id)}" data-field="value" value="${Number.isFinite(+o.value) ? esc(String(o.value)) : ""}" /></td>
-                <td><input class="input" data-entity="output" data-id="${esc(o.id)}" data-field="source" value="${esc(o.source || "")}" /></td>
-                <td><button type="button" class="btn btn-danger" data-action="remove-output" data-id="${esc(o.id)}">Remove</button></td>
-              </tr>
-            `;
-          })
-          .join("")}
-      </tbody>
-    `;
-    root.appendChild(table);
-
-    // Keep treatment delta keys aligned with outputs
-    initTreatmentDeltasAndRecurrence();
+  function onInput(sel, fn) {
+    const el = $(sel);
+    if (!el) return;
+    const handler = () => fn(el.type === "checkbox" ? el.checked : el.value);
+    el.addEventListener("input", handler);
+    el.addEventListener("change", handler);
   }
 
-  function renderTreatments() {
-    const root =
-      $("#treatmentsList") ||
-      $("#treatmentsTable") ||
-      $("#treatments") ||
-      $("#treatmentsPanel");
-    if (!root) return;
+  function bindBasicsFieldsToModel() {
+    onInput("#projectName", v => (model.project.name = String(v || "")));
+    onInput("#projectLead", v => (model.project.lead = String(v || "")));
+    onInput("#analystNames", v => (model.project.analysts = String(v || "")));
+    onInput("#projectTeam", v => (model.project.team = String(v || "")));
+    onInput("#projectSummary", v => (model.project.summary = String(v || "")));
+    onInput("#projectObjectives", v => (model.project.objectives = String(v || "")));
+    onInput("#projectActivities", v => (model.project.activities = String(v || "")));
+    onInput("#stakeholderGroups", v => (model.project.stakeholders = String(v || "")));
+    onInput("#lastUpdated", v => (model.project.lastUpdated = String(v || "")));
+    onInput("#projectGoal", v => (model.project.goal = String(v || "")));
+    onInput("#withProject", v => (model.project.withProject = String(v || "")));
+    onInput("#withoutProject", v => (model.project.withoutProject = String(v || "")));
+    onInput("#organisation", v => (model.project.organisation = String(v || "")));
+    onInput("#contactEmail", v => (model.project.contactEmail = String(v || "")));
+    onInput("#contactPhone", v => (model.project.contactPhone = String(v || "")));
 
-    root.innerHTML = "";
+    onInput("#startYear", v => (model.time.startYear = parseInt(v, 10) || model.time.startYear));
+    onInput("#projectStartYear", v => (model.time.projectStartYear = parseInt(v, 10) || model.time.projectStartYear || model.time.startYear));
+    onInput("#years", v => {
+      const n = parseInt(v, 10);
+      if (Number.isFinite(n) && n > 0) model.time.years = n;
+    });
+    onInput("#discBase", v => (model.time.discBase = parseNumber(v)));
+    onInput("#discLow", v => (model.time.discLow = parseNumber(v)));
+    onInput("#discHigh", v => (model.time.discHigh = parseNumber(v)));
+    onInput("#mirrFinance", v => (model.time.mirrFinance = parseNumber(v)));
+    onInput("#mirrReinvest", v => (model.time.mirrReinvest = parseNumber(v)));
 
-    const header = document.createElement("div");
-    header.className = "panel-header";
-    header.innerHTML = `
-      <div class="panel-title">Treatments</div>
-      <div class="panel-actions">
-        <button type="button" class="btn" id="addTreatmentInline">Add treatment</button>
-      </div>
-    `;
-    root.appendChild(header);
+    onInput("#adoptBase", v => (model.adoption.base = clamp(parseNumber(v), 0, 1)));
+    onInput("#adoptLow", v => (model.adoption.low = clamp(parseNumber(v), 0, 1)));
+    onInput("#adoptHigh", v => (model.adoption.high = clamp(parseNumber(v), 0, 1)));
 
-    const yOut = getYieldOutput();
-    const yId = yOut ? yOut.id : null;
+    onInput("#riskBase", v => (model.risk.base = clamp(parseNumber(v), 0, 1)));
+    onInput("#riskLow", v => (model.risk.low = clamp(parseNumber(v), 0, 1)));
+    onInput("#riskHigh", v => (model.risk.high = clamp(parseNumber(v), 0, 1)));
+    onInput("#rTech", v => (model.risk.tech = clamp(parseNumber(v), 0, 1)));
+    onInput("#rNonCoop", v => (model.risk.nonCoop = clamp(parseNumber(v), 0, 1)));
+    onInput("#rSocio", v => (model.risk.socio = clamp(parseNumber(v), 0, 1)));
+    onInput("#rFin", v => (model.risk.fin = clamp(parseNumber(v), 0, 1)));
+    onInput("#rMan", v => (model.risk.man = clamp(parseNumber(v), 0, 1)));
 
-    const list = document.createElement("div");
-    list.className = "treatment-cards";
-
-    const recModeOptions = `
-      <option value="annual">Annual</option>
-      <option value="every_n_years">Every N years</option>
-      <option value="once">Once</option>
-      <option value="custom">Custom years</option>
-    `;
-
-    model.treatments.forEach(t => {
-      const isCtrl = !!t.isControl;
-      const dy = yId ? (Number.isFinite(+t.deltas[yId]) ? +t.deltas[yId] : 0) : 0;
-
-      const card = document.createElement("div");
-      card.className = "card treatment-card";
-      card.innerHTML = `
-        <div class="card-head">
-          <div class="card-title">
-            <input class="input input-title" data-entity="treatment" data-id="${esc(t.id)}" data-field="name" value="${esc(t.name)}" />
-          </div>
-          <div class="card-actions">
-            <label class="toggle">
-              <input type="checkbox" data-entity="treatment" data-id="${esc(t.id)}" data-field="isControl" ${isCtrl ? "checked" : ""} />
-              <span>Control</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" data-entity="treatment" data-id="${esc(t.id)}" data-field="constrained" ${t.constrained ? "checked" : ""} />
-              <span>Constrained</span>
-            </label>
-            <button type="button" class="btn btn-danger" data-action="remove-treatment" data-id="${esc(t.id)}" ${t.isControl ? "" : ""}>Remove</button>
-          </div>
-        </div>
-
-        <div class="grid grid-4">
-          <div class="field">
-            <div class="label">Area (ha)</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="area" value="${Number.isFinite(+t.area) ? esc(String(t.area)) : ""}" />
-          </div>
-          <div class="field">
-            <div class="label">Treatment adoption (0 to 1)</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="adoption" value="${Number.isFinite(+t.adoption) ? esc(String(t.adoption)) : ""}" />
-          </div>
-          <div class="field">
-            <div class="label">Capital cost (year 0)</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="capitalCost" value="${Number.isFinite(+t.capitalCost) ? esc(String(t.capitalCost)) : ""}" />
-          </div>
-          <div class="field">
-            <div class="label">Notes</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="notes" value="${esc(t.notes || "")}" />
-          </div>
-        </div>
-
-        <div class="subhead">Operating costs (per hectare)</div>
-        <div class="grid grid-3">
-          <div class="field">
-            <div class="label">Labour</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="labourCost" value="${Number.isFinite(+t.labourCost) ? esc(String(t.labourCost)) : ""}" />
-          </div>
-          <div class="field">
-            <div class="label">Materials</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="materialsCost" value="${Number.isFinite(+t.materialsCost) ? esc(String(t.materialsCost)) : ""}" />
-          </div>
-          <div class="field">
-            <div class="label">Services</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="servicesCost" value="${Number.isFinite(+t.servicesCost) ? esc(String(t.servicesCost)) : ""}" />
-          </div>
-        </div>
-
-        <div class="subhead">Trial calibrated yield delta (t per hectare, vs control)</div>
-        <div class="grid grid-2">
-          <div class="field">
-            <div class="label">${esc(yOut ? yOut.name : "Yield")} delta</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="deltaYield" value="${Number.isFinite(dy) ? esc(String(dy)) : ""}" />
-          </div>
-          <div class="field">
-            <div class="label">Source</div>
-            <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="source" value="${esc(t.source || "")}" />
-          </div>
-        </div>
-
-        <details class="details">
-          <summary>Recurrence settings</summary>
-          <div class="grid grid-2">
-            <div class="field">
-              <div class="label">Cost recurrence</div>
-              <div class="grid grid-4">
-                <select class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_cost_mode">
-                  ${recModeOptions}
-                </select>
-                <input class="input" placeholder="Every N" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_cost_everyN" value="${esc(String(t.recurrence?.cost?.everyN ?? 1))}" />
-                <input class="input" placeholder="Start year index" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_cost_start" value="${esc(String(t.recurrence?.cost?.startYearOffset ?? 1))}" />
-                <input class="input" placeholder="End year index" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_cost_end" value="${t.recurrence?.cost?.endYearOffset == null ? "" : esc(String(t.recurrence.cost.endYearOffset))}" />
-              </div>
-              <input class="input" placeholder="Custom years (e.g. 1,3,5)" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_cost_years" value="${esc(String(t.recurrence?.cost?.yearsCsv ?? ""))}" />
-            </div>
-
-            <div class="field">
-              <div class="label">Benefit recurrence</div>
-              <div class="grid grid-4">
-                <select class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_ben_mode">
-                  ${recModeOptions}
-                </select>
-                <input class="input" placeholder="Every N" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_ben_everyN" value="${esc(String(t.recurrence?.benefit?.everyN ?? 1))}" />
-                <input class="input" placeholder="Start year index" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_ben_start" value="${esc(String(t.recurrence?.benefit?.startYearOffset ?? 1))}" />
-                <input class="input" placeholder="End year index" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_ben_end" value="${t.recurrence?.benefit?.endYearOffset == null ? "" : esc(String(t.recurrence.benefit.endYearOffset))}" />
-              </div>
-              <input class="input" placeholder="Custom years (e.g. 1,2,4)" data-entity="treatment" data-id="${esc(t.id)}" data-field="rec_ben_years" value="${esc(String(t.recurrence?.benefit?.yearsCsv ?? ""))}" />
-            </div>
-          </div>
-        </details>
-
-        <details class="details">
-          <summary>Other output deltas</summary>
-          <div class="small muted">These are per hectare changes relative to the control baseline. Use missing-safe values.</div>
-          <div class="deltas-grid">
-            ${model.outputs
-              .filter(o => !yId || o.id !== yId)
-              .map(o => {
-                const v = Number.isFinite(+t.deltas[o.id]) ? +t.deltas[o.id] : 0;
-                return `
-                  <div class="field">
-                    <div class="label">${esc(o.name)} (${esc(o.unit || "")})</div>
-                    <input class="input" data-entity="treatment" data-id="${esc(t.id)}" data-field="deltaOutput" data-output="${esc(o.id)}" value="${esc(String(v))}" />
-                  </div>
-                `;
-              })
-              .join("")}
-          </div>
-        </details>
-      `;
-
-      // Set selects after insertion (to avoid HTML escaping mismatches)
-      list.appendChild(card);
-
-      const selCost = card.querySelector(`select[data-field="rec_cost_mode"]`);
-      if (selCost) selCost.value = (t.recurrence?.cost?.mode || "annual").toLowerCase();
-
-      const selBen = card.querySelector(`select[data-field="rec_ben_mode"]`);
-      if (selBen) selBen.value = (t.recurrence?.benefit?.mode || "annual").toLowerCase();
+    onInput("#calibrationMode", v => {
+      const s = String(v || "").toLowerCase();
+      model.calibration.mode = (s === "trial" ? "trial" : "model");
+      applyTrialCalibrationToModel();
+      calcAndRender();
+    });
+    onInput("#pricePerTonne", v => {
+      const n = parseNumber(v);
+      model.calibration.pricePerTonne = Number.isFinite(n) ? n : null;
+      calcAndRender();
+    });
+    onInput("#persistenceYears", v => {
+      const n = parseInt(v, 10);
+      model.calibration.persistenceYears = Number.isFinite(n) ? n : null;
+      calcAndRender();
     });
 
-    root.appendChild(list);
-  }
+    onInput("#simN", v => {
+      const n = parseInt(v, 10);
+      if (Number.isFinite(n) && n > 0) model.sim.n = n;
+    });
+    onInput("#simSeed", v => {
+      const n = parseInt(v, 10);
+      model.sim.seed = Number.isFinite(n) ? n : null;
+    });
+    onInput("#simVariationPct", v => {
+      const n = parseNumber(v);
+      if (Number.isFinite(n) && n >= 0) model.sim.variationPct = n;
+    });
+    onInput("#simVaryOutputs", v => (model.sim.varyOutputs = !!v));
+    onInput("#simVaryTreatCosts", v => (model.sim.varyTreatCosts = !!v));
+    onInput("#simBcrMode", v => {
+      model.sim.bcrMode = String(v || "all");
+      calcAndRender();
+    });
 
-  function renderBenefits() {
-    const root =
-      $("#benefitsList") ||
-      $("#benefitsTable") ||
-      $("#benefits") ||
-      $("#benefitsPanel");
-    if (!root) return;
-
-    root.innerHTML = "";
-
-    const header = document.createElement("div");
-    header.className = "panel-header";
-    header.innerHTML = `
-      <div class="panel-title">Additional benefits</div>
-      <div class="panel-actions">
-        <button type="button" class="btn" id="addBenefitInline">Add benefit</button>
-      </div>
-    `;
-    root.appendChild(header);
-
-    const table = document.createElement("table");
-    table.className = "summary-table";
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>Label</th>
-          <th>Category</th>
-          <th>Frequency</th>
-          <th>Start year</th>
-          <th>End year</th>
-          <th>Annual amount</th>
-          <th>Growth (%)</th>
-          <th>Link adoption</th>
-          <th>Link risk</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${model.benefits
-          .map(b => {
-            return `
-              <tr>
-                <td><input class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="label" value="${esc(b.label)}" /></td>
-                <td><input class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="category" value="${esc(b.category || "")}" /></td>
-                <td>
-                  <select class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="frequency">
-                    <option value="Annual">Annual</option>
-                    <option value="Once">Once</option>
-                  </select>
-                </td>
-                <td><input class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="startYear" value="${esc(String(b.startYear ?? ""))}" /></td>
-                <td><input class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="endYear" value="${esc(String(b.endYear ?? ""))}" /></td>
-                <td><input class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="annualAmount" value="${esc(String(b.annualAmount ?? ""))}" /></td>
-                <td><input class="input" data-entity="benefit" data-id="${esc(b.id)}" data-field="growthPct" value="${esc(String(b.growthPct ?? 0))}" /></td>
-                <td><input type="checkbox" data-entity="benefit" data-id="${esc(b.id)}" data-field="linkAdoption" ${b.linkAdoption ? "checked" : ""} /></td>
-                <td><input type="checkbox" data-entity="benefit" data-id="${esc(b.id)}" data-field="linkRisk" ${b.linkRisk ? "checked" : ""} /></td>
-                <td><button type="button" class="btn btn-danger" data-action="remove-benefit" data-id="${esc(b.id)}">Remove</button></td>
-              </tr>
-            `;
-          })
-          .join("")}
-      </tbody>
-    `;
-    root.appendChild(table);
-
-    // Set frequency selects after insertion
-    $$( `select[data-entity="benefit"][data-field="frequency"]` ).forEach(sel => {
-      const id = sel.getAttribute("data-id");
-      const b = model.benefits.find(x => x.id === id);
-      if (b) sel.value = b.frequency || "Annual";
+    onInput("#sensPriceMultipliers", v => {
+      const arr = String(v || "").split(/[,\s]+/).map(parseNumber).filter(n => Number.isFinite(n));
+      if (arr.length) model.sensitivity.priceMultipliers = arr;
+    });
+    onInput("#sensPersistenceYears", v => {
+      const arr = String(v || "").split(/[,\s]+/).map(x => parseInt(x, 10)).filter(n => Number.isFinite(n));
+      if (arr.length) model.sensitivity.persistenceYears = arr;
+    });
+    onInput("#sensRecurrenceMultipliers", v => {
+      const arr = String(v || "").split(/[,\s]+/).map(parseNumber).filter(n => Number.isFinite(n));
+      if (arr.length) model.sensitivity.recurrenceMultipliers = arr;
+    });
+    onInput("#sensDiscountRates", v => {
+      const arr = String(v || "").split(/[,\s]+/).map(parseNumber).filter(n => Number.isFinite(n));
+      model.sensitivity.discountRatesPct = arr.length ? arr : null;
     });
   }
 
-  function renderCosts() {
-    const root =
-      $("#otherCostsList") ||
-      $("#costsList") ||
-      $("#otherCosts") ||
-      $("#costsPanel");
-    if (!root) return;
-
-    root.innerHTML = "";
-
-    const header = document.createElement("div");
-    header.className = "panel-header";
-    header.innerHTML = `
-      <div class="panel-title">Other project costs</div>
-      <div class="panel-actions">
-        <button type="button" class="btn" id="addCostInline">Add cost</button>
-      </div>
-    `;
-    root.appendChild(header);
-
-    const table = document.createElement("table");
-    table.className = "summary-table";
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>Label</th>
-          <th>Type</th>
-          <th>Annual</th>
-          <th>Start year</th>
-          <th>End year</th>
-          <th>Capital</th>
-          <th>Capital year</th>
-          <th>Constrained</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${model.otherCosts
-          .map(c => {
-            return `
-              <tr>
-                <td><input class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="label" value="${esc(c.label || "")}" /></td>
-                <td>
-                  <select class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="type">
-                    <option value="annual">Annual</option>
-                    <option value="capital">Capital</option>
-                  </select>
-                </td>
-                <td><input class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="annual" value="${esc(String(c.annual ?? 0))}" /></td>
-                <td><input class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="startYear" value="${esc(String(c.startYear ?? model.time.startYear))}" /></td>
-                <td><input class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="endYear" value="${esc(String(c.endYear ?? model.time.startYear))}" /></td>
-                <td><input class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="capital" value="${esc(String(c.capital ?? 0))}" /></td>
-                <td><input class="input" data-entity="cost" data-id="${esc(c.id)}" data-field="year" value="${esc(String(c.year ?? model.time.startYear))}" /></td>
-                <td><input type="checkbox" data-entity="cost" data-id="${esc(c.id)}" data-field="constrained" ${c.constrained ? "checked" : ""} /></td>
-                <td><button type="button" class="btn btn-danger" data-action="remove-cost" data-id="${esc(c.id)}">Remove</button></td>
-              </tr>
-            `;
-          })
-          .join("")}
-      </tbody>
-    `;
-    root.appendChild(table);
-
-    // Set type selects after insertion
-    $$( `select[data-entity="cost"][data-field="type"]` ).forEach(sel => {
-      const id = sel.getAttribute("data-id");
-      const c = model.otherCosts.find(x => x.id === id);
-      if (c) sel.value = c.type || "annual";
-    });
-  }
-
-  function renderScenarioControls() {
-    renderScenarioList();
-  }
-
-  function renderAll() {
-    renderOutputs();
-    renderTreatments();
-    renderBenefits();
-    renderCosts();
-    renderScenarioControls();
-    renderAiBriefingTab();
-    renderDataChecksPanel();
-  }
-
-  // =========================
-  // 15) DYNAMIC LIST HANDLERS (ONE-TIME EVENT DELEGATION)
-  // =========================
-  let dynamicHandlersBound = false;
-
-  function initDynamicListHandlers() {
-    if (dynamicHandlersBound) return;
-    dynamicHandlersBound = true;
-
-    // Add inline buttons
-    document.addEventListener("click", e => {
-      const btn = e.target.closest("#addOutputInline, #addTreatmentInline, #addBenefitInline, #addCostInline");
-      if (!btn) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (btn.id === "addOutputInline") {
-        const o = { id: uid(), name: "New output", unit: "", value: 0, source: "" };
-        model.outputs.push(o);
-        initTreatmentDeltasAndRecurrence();
-        renderOutputs();
-        renderTreatments();
-        calcAndRender();
-        showToast("Output added.");
-      } else if (btn.id === "addTreatmentInline") {
-        const t = {
-          id: uid(),
-          name: "New treatment",
-          area: 100,
-          adoption: 1,
-          deltas: {},
-          labourCost: 0,
-          materialsCost: 0,
-          servicesCost: 0,
-          capitalCost: 0,
-          constrained: true,
-          source: "Input Directly",
-          isControl: false,
-          notes: "",
-          recurrence: {
-            cost: { mode: "annual", everyN: 1, startYearOffset: 1, endYearOffset: null, yearsCsv: "" },
-            benefit: { mode: "annual", everyN: 1, startYearOffset: 1, endYearOffset: null, yearsCsv: "" }
-          }
-        };
-        model.outputs.forEach(o => (t.deltas[o.id] = 0));
-        model.treatments.push(t);
-        renderTreatments();
-        calcAndRender();
-        showToast("Treatment added.");
-      } else if (btn.id === "addBenefitInline") {
-        const b = {
-          id: uid(),
-          label: "New benefit",
-          category: "C4",
-          theme: "",
-          frequency: "Annual",
-          startYear: model.time.startYear,
-          endYear: model.time.startYear,
-          year: model.time.startYear,
-          unitValue: 0,
-          quantity: 0,
-          abatement: 0,
-          annualAmount: 0,
-          growthPct: 0,
-          linkAdoption: true,
-          linkRisk: true,
-          p0: 0,
-          p1: 0,
-          consequence: 0,
-          notes: ""
-        };
-        model.benefits.push(b);
-        renderBenefits();
-        calcAndRender();
-        showToast("Benefit added.");
-      } else if (btn.id === "addCostInline") {
-        const c = {
-          id: uid(),
-          label: "New cost",
-          type: "annual",
-          category: "Services",
-          annual: 0,
-          startYear: model.time.startYear,
-          endYear: model.time.startYear,
-          capital: 0,
-          year: model.time.startYear,
-          constrained: true,
-          depMethod: "none",
-          depLife: 5,
-          depRate: 30
-        };
-        model.otherCosts.push(c);
-        renderCosts();
-        calcAndRender();
-        showToast("Cost item added.");
-      }
-    });
-
-    // Remove actions
-    document.addEventListener("click", e => {
-      const rm =
-        e.target.closest(
-          `[data-action="remove-output"],[data-action="remove-treatment"],[data-action="remove-benefit"],[data-action="remove-cost"]`
-        );
-      if (!rm) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      const id = rm.getAttribute("data-id");
-      const act = rm.getAttribute("data-action");
-
-      if (act === "remove-output") {
-        model.outputs = model.outputs.filter(o => o.id !== id);
-        // Remove delta keys
-        model.treatments.forEach(t => {
-          if (t.deltas && id in t.deltas) delete t.deltas[id];
-        });
-        renderAll();
-        calcAndRender();
-        showToast("Output removed.");
-      } else if (act === "remove-treatment") {
-        model.treatments = model.treatments.filter(t => t.id !== id);
-        // Ensure at least one control remains; if none, mark first as control
-        if (!model.treatments.some(t => t.isControl) && model.treatments.length) model.treatments[0].isControl = true;
-        renderTreatments();
-        calcAndRender();
-        showToast("Treatment removed.");
-      } else if (act === "remove-benefit") {
-        model.benefits = model.benefits.filter(b => b.id !== id);
-        renderBenefits();
-        calcAndRender();
-        showToast("Benefit removed.");
-      } else if (act === "remove-cost") {
-        model.otherCosts = model.otherCosts.filter(c => c.id !== id);
-        renderCosts();
-        calcAndRender();
-        showToast("Cost item removed.");
-      }
-    });
-
-    // Input/change delegation for dynamic fields
-    const onChange = (t) => {
-      const entity = t.getAttribute("data-entity");
-      const id = t.getAttribute("data-id");
-      const field = t.getAttribute("data-field");
-      if (!entity || !id || !field) return false;
-
-      const isCheckbox = t.type === "checkbox";
-      const rawVal = isCheckbox ? !!t.checked : t.value;
-
-      if (entity === "output") {
-        const o = model.outputs.find(x => x.id === id);
-        if (!o) return false;
-        if (field === "name") o.name = String(rawVal || "");
-        else if (field === "unit") o.unit = String(rawVal || "");
-        else if (field === "value") o.value = parseNumber(rawVal);
-        else if (field === "source") o.source = String(rawVal || "");
-        initTreatmentDeltasAndRecurrence();
-        return true;
-      }
-
-      if (entity === "treatment") {
-        const tr = model.treatments.find(x => x.id === id);
-        if (!tr) return false;
-
-        const yOut = getYieldOutput();
-        const yId = yOut ? yOut.id : null;
-
-        if (field === "name") tr.name = String(rawVal || "");
-        else if (field === "source") tr.source = String(rawVal || "");
-        else if (field === "notes") tr.notes = String(rawVal || "");
-        else if (field === "area") tr.area = parseNumber(rawVal);
-        else if (field === "adoption") tr.adoption = parseNumber(rawVal);
-        else if (field === "capitalCost") tr.capitalCost = parseNumber(rawVal);
-        else if (field === "labourCost") tr.labourCost = parseNumber(rawVal);
-        else if (field === "materialsCost") tr.materialsCost = parseNumber(rawVal);
-        else if (field === "servicesCost") tr.servicesCost = parseNumber(rawVal);
-        else if (field === "constrained") tr.constrained = !!rawVal;
-        else if (field === "isControl") {
-          tr.isControl = !!rawVal;
-          if (tr.isControl) {
-            // Ensure only one control
-            model.treatments.forEach(x => {
-              if (x.id !== tr.id) x.isControl = false;
-            });
-          } else {
-            // Ensure at least one control exists
-            if (!model.treatments.some(x => x.isControl)) tr.isControl = true;
-          }
-        } else if (field === "deltaYield") {
-          if (yId) tr.deltas[yId] = parseNumber(rawVal);
-        } else if (field === "deltaOutput") {
-          const outId = t.getAttribute("data-output");
-          if (outId) tr.deltas[outId] = parseNumber(rawVal);
-        } else if (field === "rec_cost_mode") {
-          if (!tr.recurrence) tr.recurrence = {};
-          if (!tr.recurrence.cost) tr.recurrence.cost = {};
-          tr.recurrence.cost.mode = String(rawVal || "annual").toLowerCase();
-        } else if (field === "rec_cost_everyN") {
-          tr.recurrence.cost.everyN = Math.max(1, parseInt(rawVal, 10) || 1);
-        } else if (field === "rec_cost_start") {
-          tr.recurrence.cost.startYearOffset = Math.max(0, parseInt(rawVal, 10) || 1);
-        } else if (field === "rec_cost_end") {
-          const v = parseInt(rawVal, 10);
-          tr.recurrence.cost.endYearOffset = rawVal === "" || !Number.isFinite(v) ? null : v;
-        } else if (field === "rec_cost_years") {
-          tr.recurrence.cost.yearsCsv = String(rawVal || "");
-        } else if (field === "rec_ben_mode") {
-          if (!tr.recurrence) tr.recurrence = {};
-          if (!tr.recurrence.benefit) tr.recurrence.benefit = {};
-          tr.recurrence.benefit.mode = String(rawVal || "annual").toLowerCase();
-        } else if (field === "rec_ben_everyN") {
-          tr.recurrence.benefit.everyN = Math.max(1, parseInt(rawVal, 10) || 1);
-        } else if (field === "rec_ben_start") {
-          tr.recurrence.benefit.startYearOffset = Math.max(0, parseInt(rawVal, 10) || 1);
-        } else if (field === "rec_ben_end") {
-          const v = parseInt(rawVal, 10);
-          tr.recurrence.benefit.endYearOffset = rawVal === "" || !Number.isFinite(v) ? null : v;
-        } else if (field === "rec_ben_years") {
-          tr.recurrence.benefit.yearsCsv = String(rawVal || "");
-        }
-        initTreatmentDeltasAndRecurrence();
-        return true;
-      }
-
-      if (entity === "benefit") {
-        const b = model.benefits.find(x => x.id === id);
-        if (!b) return false;
-        if (field === "label") b.label = String(rawVal || "");
-        else if (field === "category") b.category = String(rawVal || "");
-        else if (field === "frequency") b.frequency = String(rawVal || "Annual");
-        else if (field === "startYear") b.startYear = parseInt(rawVal, 10) || model.time.startYear;
-        else if (field === "endYear") b.endYear = parseInt(rawVal, 10) || b.startYear;
-        else if (field === "annualAmount") b.annualAmount = parseNumber(rawVal);
-        else if (field === "growthPct") b.growthPct = parseNumber(rawVal);
-        else if (field === "linkAdoption") b.linkAdoption = !!rawVal;
-        else if (field === "linkRisk") b.linkRisk = !!rawVal;
-        return true;
-      }
-
-      if (entity === "cost") {
-        const c = model.otherCosts.find(x => x.id === id);
-        if (!c) return false;
-        if (field === "label") c.label = String(rawVal || "");
-        else if (field === "type") c.type = String(rawVal || "annual");
-        else if (field === "annual") c.annual = parseNumber(rawVal);
-        else if (field === "startYear") c.startYear = parseInt(rawVal, 10) || model.time.startYear;
-        else if (field === "endYear") c.endYear = parseInt(rawVal, 10) || c.startYear;
-        else if (field === "capital") c.capital = parseNumber(rawVal);
-        else if (field === "year") c.year = parseInt(rawVal, 10) || model.time.startYear;
-        else if (field === "constrained") c.constrained = !!rawVal;
-        return true;
-      }
-
-      return false;
+  function renderProjectKpis(project, opts) {
+    const set = (id, val) => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = val;
     };
+    set("#kpiPvBenefits", money(project.pvBenefits));
+    set("#kpiPvCosts", money(project.pvCosts));
+    set("#kpiNpv", money(project.npv));
+    set("#kpiBcr", Number.isFinite(project.bcr) ? fmt(project.bcr) : "n/a");
+    set("#kpiRoi", Number.isFinite(project.roiPct) ? percent(project.roiPct) : "n/a");
+    set("#kpiIrr", Number.isFinite(project.irrPct) ? percent(project.irrPct) : "n/a");
+    set("#kpiPayback", project.paybackYears != null ? String(project.paybackYears) : "n/a");
 
-    document.addEventListener("input", e => {
-      const t = e.target;
-      if (!t) return;
-      if (!t.getAttribute) return;
-      if (onChange(t)) calcAndRenderDebounced();
-    });
-
-    document.addEventListener("change", e => {
-      const t = e.target;
-      if (!t) return;
-      if (!t.getAttribute) return;
-      if (onChange(t)) calcAndRenderDebounced();
-    });
-  }
-
-  // =========================
-  // 16) BASE-CASE CALC + RENDER (PROJECT + TREATMENTS + SENSITIVITY)
-  // =========================
-  let lastSensitivityGrid = null;
-
-  function renderProjectSummary(project, opts) {
-    // Optional summary fields
-    setVal("#pvBenefitsOut", money(project.pvBenefits));
-    setVal("#pvCostsOut", money(project.pvCosts));
-    setVal("#npvOut", money(project.npv));
-    setVal("#bcrOut", Number.isFinite(project.bcr) ? fmt(project.bcr) : "n/a");
-    setVal("#roiOut", Number.isFinite(project.roiPct) ? percent(project.roiPct) : "n/a");
-    setVal("#irrOut", Number.isFinite(project.irrPct) ? percent(project.irrPct) : "n/a");
-    setVal("#mirrOut", Number.isFinite(project.mirrPct) ? percent(project.mirrPct) : "n/a");
-    setVal("#paybackOut", project.paybackYears != null ? String(project.paybackYears) : "n/a");
-
-    const summaryBox = $("#projectSummaryOut") || $("#projectSummaryText") || $("#baseCaseSummary");
-    if (summaryBox) {
-      const lines = [];
-      lines.push(
-        `Base case uses a ${opts.years} year horizon and a discount rate of ${fmt(opts.ratePct)} percent per year.`
-      );
-      lines.push(`Present value benefits are ${money(project.pvBenefits)} and present value costs are ${money(project.pvCosts)}.`);
-      lines.push(`Net present value is ${money(project.npv)}. Benefit cost ratio is ${Number.isFinite(project.bcr) ? fmt(project.bcr) : "n/a"}.`);
-      lines.push(`Return on investment is ${Number.isFinite(project.roiPct) ? fmt(project.roiPct) : "n/a"} percent.`);
-      summaryBox.textContent = lines.join("\n\n");
+    const meta = $("#baseCaseMeta");
+    if (meta) {
+      meta.textContent = `${opts.years} year horizon, discount rate ${fmt(opts.ratePct)} percent, adoption multiplier ${fmt(opts.adoptMul)}, risk ${fmt(opts.risk)}, price ${money(opts.pricePerTonne)} per tonne.`;
     }
   }
 
   function calcAndRender() {
-    // Apply trial calibration if requested and available
-    applyTrialCalibrationToModel();
-
-    // Ensure recurrence and deltas are consistent
-    initTreatmentDeltasAndRecurrence();
-
     const opts = getBaseCaseOpts();
 
-    // Project totals
+    // Project-level results (optional display)
     const project = computeProjectCBA(opts);
-    renderProjectSummary(project, opts);
+    renderProjectKpis(project, opts);
 
-    // Per-treatment results
-    const perTreatment = buildPerTreatmentResults(opts);
-    renderLeaderboard(perTreatment);
-    renderComparisonToControlGrid(perTreatment);
-    renderWhatThisMeans(perTreatment, opts);
+    // Per-treatment comparison (Results tab)
+    const per = buildPerTreatmentResults(opts);
+    renderLeaderboard(per);
+    renderComparisonToControlGrid(per);
+    renderWhatThisMeans(per, opts);
 
-    // Sensitivity (render only if a panel exists or if last computed)
-    const sensRoot = $("#sensitivityGrid") || $("#sensitivityTable") || $("#sensitivityResults");
-    if (sensRoot) {
-      lastSensitivityGrid = computeSensitivityGrid();
-      renderSensitivityGrid(lastSensitivityGrid);
-    }
+    // AI briefing (optional)
+    renderAiBriefingTab();
 
-    // AI briefing preview refresh (lightweight)
-    const aiPanel = $("#aiBriefingPreview") || $("#copilotPreview") || $("#resultsJsonPreview");
-    if (aiPanel) renderAiBriefingTab();
+    // Data checks panel (optional)
+    renderDataChecksPanel();
   }
 
-  // =========================
-  // 17) SIMULATION (MONTE CARLO) + OPTIONAL RENDER
-  // =========================
-  function computeSimDraw(opts, r01) {
-    const varyPct = Math.max(0, Number(model.sim.variationPct) || 0) / 100;
-    const out = JSON.parse(JSON.stringify(opts));
+  function summariseArray(arr) {
+    const a = arr.filter(v => Number.isFinite(v)).slice().sort((x, y) => x - y);
+    if (!a.length) return null;
+    const q = p => a[Math.min(a.length - 1, Math.max(0, Math.floor((p / 100) * (a.length - 1))))];
+    return {
+      n: a.length,
+      mean: safeMean(a),
+      p5: q(5),
+      p25: q(25),
+      p50: q(50),
+      p75: q(75),
+      p95: q(95),
+      min: a[0],
+      max: a[a.length - 1]
+    };
+  }
 
-    // Vary price multiplier around 1 with triangular distribution
-    // (This keeps the simulation meaningful even without explicit price grid.)
-    const pm = 1 + triangular(r01(), -varyPct, 0, varyPct);
-    out.priceMultiplier = pm;
-
-    // Vary persistence years by a small discrete jitter (bounded)
-    const basePy = Number.isFinite(out.persistenceYears) ? out.persistenceYears : out.years;
-    const jitter = Math.round(triangular(r01(), -2, 0, 2));
-    out.persistenceYears = clamp(basePy + jitter, 0, out.years);
-
-    // Vary adoption and risk within low/high ranges if provided
-    out.adoptMul = clamp(
-      triangular(r01(), model.adoption.low, model.adoption.base, model.adoption.high),
-      0,
-      1
-    );
-    out.risk = clamp(
-      triangular(r01(), model.risk.low, model.risk.base, model.risk.high),
-      0,
-      1
-    );
-
-    // Discount rate within low/base/high
-    out.ratePct = triangular(r01(), model.time.discLow, model.time.discBase, model.time.discHigh);
-
-    return out;
+  function renderSimulationResults(stats) {
+    const root = $("#simResults") || $("#simulationResults") || $("#simSummary");
+    if (!root) return;
+    if (!stats) {
+      root.textContent = "No simulation results available.";
+      return;
+    }
+    root.textContent =
+      `Monte Carlo summary (n = ${stats.n.toLocaleString()}).\n\n` +
+      `Net present value: mean ${money(stats.mean)}, median ${money(stats.p50)}, 5th percentile ${money(stats.p5)}, 95th percentile ${money(stats.p95)}.\n` +
+      `Range: ${money(stats.min)} to ${money(stats.max)}.`;
   }
 
   function runSimulation() {
-    const n = Math.max(100, parseInt(model.sim.n, 10) || 1000);
-    const seed = model.sim.seed != null && model.sim.seed !== "" ? parseInt(model.sim.seed, 10) : null;
-    const r01 = rng(seed || undefined);
+    const N = Math.max(1, parseInt(model.sim.n, 10) || 1000);
+    const seed = model.sim.seed != null ? model.sim.seed : Math.floor(Math.random() * 1e9);
+    const R = rng(seed);
 
-    const base = getBaseCaseOpts();
+    const baseOpts = getBaseCaseOpts();
     const npvArr = [];
     const bcrArr = [];
 
-    for (let i = 0; i < n; i++) {
-      const drawOpts = computeSimDraw(base, r01);
+    for (let i = 0; i < N; i++) {
+      const adopt = triangular(R(), model.adoption.low, model.adoption.base, model.adoption.high);
+      const risk = triangular(R(), model.risk.low, model.risk.base, model.risk.high);
 
-      // Optionally vary outputs and costs at the model level per draw
-      // We implement this by scaling treatment deltas and operating costs temporarily per draw.
-      const snap = null;
+      const priceMult = model.sim.varyOutputs ? (1 + ((R() * 2 - 1) * (model.sim.variationPct / 100))) : 1.0;
+      const recMult = model.sim.varyTreatCosts ? (1 + ((R() * 2 - 1) * (model.sim.variationPct / 100))) : 1.0;
 
-      if (model.sim.varyOutputs || model.sim.varyTreatCosts || model.sim.varyInputCosts) {
-        // Snapshot current values to restore after each draw
-        // Keep this lightweight and local to avoid drifting.
-      }
+      const opts = {
+        ...baseOpts,
+        adoptMul: clamp(adopt, 0, 1),
+        risk: clamp(risk, 0, 1),
+        priceMultiplier: priceMult,
+        recurrenceMultiplier: recMult
+      };
 
-      const proj = computeProjectCBA(drawOpts);
+      const proj = computeProjectCBA(opts);
       npvArr.push(proj.npv);
       bcrArr.push(proj.bcr);
-
-      // No persistent mutations are applied per draw.
     }
 
     model.sim.results = { npv: npvArr, bcr: bcrArr };
+    const npvStats = summariseArray(npvArr);
+    renderSimulationResults(npvStats);
 
-    renderSimulationSummary(npvArr, bcrArr);
+    const bcrBox = $("#simBcrSummary");
+    const bcrStats = summariseArray(bcrArr);
+    if (bcrBox && bcrStats) {
+      bcrBox.textContent =
+        `Benefit cost ratio: mean ${fmt(bcrStats.mean)}, median ${fmt(bcrStats.p50)}, 5th percentile ${fmt(bcrStats.p5)}, 95th percentile ${fmt(bcrStats.p95)}.`;
+    }
+
     showToast("Simulation completed.");
   }
 
-  function quantile(arr, q) {
-    const clean = arr.filter(v => Number.isFinite(v)).slice().sort((a, b) => a - b);
-    if (!clean.length) return NaN;
-    const pos = (clean.length - 1) * q;
-    const lo = Math.floor(pos);
-    const hi = Math.ceil(pos);
-    if (lo === hi) return clean[lo];
-    const w = pos - lo;
-    return clean[lo] * (1 - w) + clean[hi] * w;
+  function renderAll() {
+    setBasicsFieldsFromModel();
+    renderScenarioList();
+    renderAiBriefingTab();
+
+    // If you have optional tab-specific renders, keep them safe:
+    renderDataChecksPanel();
   }
 
-  function renderSimulationSummary(npvArr, bcrArr) {
-    const root = $("#simSummary") || $("#simulationSummary") || $("#simResults");
-    if (!root) return;
-
-    const npv50 = quantile(npvArr, 0.5);
-    const npv10 = quantile(npvArr, 0.1);
-    const npv90 = quantile(npvArr, 0.9);
-    const bcr50 = quantile(bcrArr, 0.5);
-    const bcr10 = quantile(bcrArr, 0.1);
-    const bcr90 = quantile(bcrArr, 0.9);
-
-    const target = Number(model.sim.targetBCR) || 2;
-    const meet = bcrArr.filter(v => Number.isFinite(v) && v >= target).length;
-    const pMeet = bcrArr.length ? (meet / bcrArr.length) * 100 : NaN;
-
-    root.innerHTML = `
-      <div class="card">
-        <div class="card-head"><div class="card-title">Simulation summary</div></div>
-        <div class="grid grid-3">
-          <div class="stat">
-            <div class="label">NPV (median)</div>
-            <div class="value">${money(npv50)}</div>
-            <div class="small muted">10th to 90th percentile: ${money(npv10)} to ${money(npv90)}</div>
-          </div>
-          <div class="stat">
-            <div class="label">BCR (median)</div>
-            <div class="value">${Number.isFinite(bcr50) ? fmt(bcr50) : "n/a"}</div>
-            <div class="small muted">10th to 90th percentile: ${Number.isFinite(bcr10) ? fmt(bcr10) : "n/a"} to ${Number.isFinite(bcr90) ? fmt(bcr90) : "n/a"}</div>
-          </div>
-          <div class="stat">
-            <div class="label">Probability BCR ≥ ${fmt(target)}</div>
-            <div class="value">${Number.isFinite(pMeet) ? fmt(pMeet) + "%" : "n/a"}</div>
-            <div class="small muted">Based on ${npvArr.length.toLocaleString()} runs</div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // =========================
-  // 18) DEFAULT EMBEDDED DATA (OPTIONAL)
-  // =========================
-  function tryAutoLoadEmbeddedTrialIfEmpty() {
-    // Do not override if user already imported data
-    if (trialState.cleaned && trialState.cleaned.length) return;
-
-    // If a previous import exists, do not auto-load
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.lastImport);
-      if (raw) return;
-    } catch (e) {
-      // ignore
-    }
-
-    // Use embedded RAW_PLOTS through the same importer pipeline
-    const cols = Object.keys(RAW_PLOTS[0] || {});
-    if (!cols.length) return;
-
+  function buildEmbeddedTrialText() {
+    // Convert RAW_PLOTS to a TSV with the same pipeline as uploads
+    const rows = RAW_PLOTS;
+    const cols = rows.length ? Object.keys(rows[0]) : [];
     const lines = [];
     lines.push(cols.join("\t"));
-    RAW_PLOTS.forEach(r => {
-      lines.push(cols.map(c => (r[c] == null ? "" : String(r[c]))).join("\t"));
-    });
+    rows.forEach(r => lines.push(cols.map(c => (r[c] == null ? "" : String(r[c]))).join("\t")));
+    return lines.join("\n");
+  }
 
-    handleImportText(lines.join("\n"), { source: "embedded", delimiter: "\t" });
+  async function initDefaultDataIfNeeded() {
+    // If nothing has been imported yet, run embedded defaults through the same import pipeline
+    if (!trialState.cleaned || !trialState.cleaned.length) {
+      const text = buildEmbeddedTrialText();
+      await handleImportText(text, { source: "embedded-defaults", delimiter: "\t" });
+      // handleImportText already calls renderAll + calcAndRender
+    } else {
+      renderAll();
+      calcAndRender();
+    }
   }
 
   // =========================
-  // 19) BOOTSTRAP: INIT
+  // 14) BOOT
   // =========================
-  function boot() {
+  document.addEventListener("DOMContentLoaded", async () => {
+    ensureToastRoot();
+
     initTabs();
-    bindBasics();
-    renderAll();
-    calcAndRender();
-    tryAutoLoadEmbeddedTrialIfEmpty();
-    showToast("Tool ready.");
-  }
+    initImportPipelineBindings();
+    initResultsFilters();
+    initExportBindings();
+    initAiBriefingBindings();
+    initScenarioBindings();
+    initActions();
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
+    bindBasicsFieldsToModel();
+    initTreatmentDeltasAndRecurrence();
+
+    // Default: prefer Results as landing if present
+    if (document.querySelector("[data-tab='results'], [data-tab-target='results'], #tab-results")) {
+      switchTab("results");
+    }
+
+    await initDefaultDataIfNeeded();
+  });
 })();
