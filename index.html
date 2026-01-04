@@ -2,668 +2,945 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Faba Beans Trial CBA Decision Aid - Newcastle Business School</title>
+  <title>Farming CBA Decision Aid Tool - Newcastle Business School</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 
 <body data-theme="worldbank-light">
-  <div id="appRoot">
-    <!-- Top bar -->
-    <header id="topBar" class="app-header" role="banner">
-      <div class="brand">
+  <!-- Required global tooltip bubble (used for any element with data-tip) -->
+  <div id="tooltipBubble" role="tooltip" aria-hidden="true"></div>
+
+  <!-- Required bottom-right toast host -->
+  <div id="toastHost" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- App shell -->
+  <div id="appShell">
+    <!-- Top navigation -->
+    <header id="topNav" class="app-header">
+      <div class="brand" id="navBrand">
         <div class="brand-mark" aria-hidden="true">NBS</div>
         <div class="brand-text">
-          <div id="appTitle" class="brand-title">Faba Beans Trial Cost Benefit Decision Aid</div>
-          <div id="appSubtitle" class="brand-subtitle">Newcastle Business School</div>
+          <div class="brand-title">Farming CBA Decision Aid Tool</div>
+          <div class="brand-subtitle">Newcastle Business School</div>
         </div>
       </div>
 
-      <div class="header-actions" aria-label="Status and links">
-        <span id="activeDatasetBadge" class="badge" title="Dataset status">Not loaded</span>
-        <a id="navTechnicalAppendix" class="btn ghost" href="technical-appendix.html" target="_blank" rel="noopener">
-          Technical appendix
+      <nav class="header-links" aria-label="Primary links">
+        <a id="navLinkHome" class="nav-link" href="index.html" data-tip="Open the main tool page.">Home</a>
+        <a id="navLinkAppendix" class="nav-link" href="technical-appendix.html" target="_blank" rel="noopener"
+           data-tip="Open the technical appendix in a new tab.">
+          Technical Appendix
         </a>
-      </div>
+      </nav>
     </header>
 
-    <!-- Primary navigation -->
-    <nav id="navPrimary" class="tabs-nav" aria-label="Main sections">
-      <button id="navResults" type="button" class="tab-link active" aria-selected="true" aria-controls="tabResults">
-        Results
-      </button>
-      <button id="navImport" type="button" class="tab-link" aria-selected="false" aria-controls="tabImport">
-        Data import and validation
-      </button>
-      <button id="navDiagnostics" type="button" class="tab-link" aria-selected="false" aria-controls="tabDiagnostics">
-        Diagnostics
-      </button>
-      <button id="navConfiguration" type="button" class="tab-link" aria-selected="false" aria-controls="tabConfiguration">
-        Configuration
-      </button>
-      <button id="navAIBriefing" type="button" class="tab-link" aria-selected="false" aria-controls="tabAIBriefing">
-        AI briefing
-      </button>
-      <button id="navExports" type="button" class="tab-link" aria-selected="false" aria-controls="tabExports">
-        Exports
-      </button>
-    </nav>
+    <!-- Blocking banner shown when prerequisites are missing -->
+    <div id="globalBlockingBanner" class="blocking-banner" role="region" aria-label="Action required" hidden>
+      <div class="blocking-inner">
+        <div class="blocking-text">
+          <strong>Action required:</strong>
+          <span id="globalBlockingText">Import and commit data to view results.</span>
+        </div>
+        <div class="blocking-actions">
+          <button id="btnGlobalGoImport" class="btn primary" type="button"
+                  data-tip="Go to data import to upload or paste the dataset, then validate and commit.">
+            Go to Data Import
+          </button>
+        </div>
+      </div>
+    </div>
 
     <main class="app-main" role="main">
-      <!-- RESULTS TAB (default open) -->
-      <section id="tabResults" class="tab-panel active show" aria-hidden="false" role="tabpanel" aria-label="Results">
-        <div class="card">
-          <div id="resultsHeader" class="results-header">
-            <div class="results-title-block">
-              <h1 class="h1">Comparison to control</h1>
-              <p class="small muted">
-                Results are computed from plot-level trial data using replicate-specific control baselines.
-                All costs and benefits are shown in Australian dollars and tonnes per hectare where relevant.
-              </p>
-            </div>
-            <div class="results-title-actions">
-              <div id="resultsStatusLine" class="status-line" role="status" aria-live="polite">
-                No dataset committed yet. Import data, validate, then commit to compute results.
-              </div>
-            </div>
-          </div>
+      <!-- Tab bar -->
+      <div id="tabBar" class="tabs-nav" role="tablist" aria-label="Main sections">
+        <button id="tabBtnResults" type="button" class="tab-link active" role="tab" aria-selected="true"
+                aria-controls="tabResults" data-tip="View control versus treatment comparisons and rankings.">
+          Results
+        </button>
+        <button id="tabBtnImport" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabImport" data-tip="Upload or paste the dataset and dictionary, then validate and commit.">
+          Data Import
+        </button>
+        <button id="tabBtnConfig" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabConfig" data-tip="Set horizon, prices, discount rates, persistence and cost recurrence.">
+          Configuration
+        </button>
+        <button id="tabBtnChecks" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabChecks" data-tip="Review scaling rule triggers and data integrity summaries.">
+          Data Checks
+        </button>
+        <button id="tabBtnDiagnostics" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabDiagnostics" data-tip="Run diagnostics for missing controls, missing values, and warnings.">
+          Diagnostics
+        </button>
+        <button id="tabBtnAI" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabAI" data-tip="Generate a copy-ready briefing prompt and results JSON.">
+          AI Briefing
+        </button>
+        <button id="tabBtnExports" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabExports" data-tip="Export cleaned data, summaries, and sensitivity outputs for Excel.">
+          Exports
+        </button>
+        <button id="tabBtnIntro" type="button" class="tab-link" role="tab" aria-selected="false"
+                aria-controls="tabIntro" data-tip="Read what the tool does and how to use it.">
+          Introduction
+        </button>
+      </div>
 
-          <!-- Scenario bar -->
-          <div id="scenarioBar" class="scenario-bar" aria-label="Scenario settings">
-            <div class="scenario-grid">
-              <div class="field">
-                <label for="inputTimeHorizon" data-tooltip="Number of years used in the present value calculations.">
-                  Time horizon (years)
-                </label>
-                <input id="inputTimeHorizon" type="number" min="1" step="1" value="10" />
+      <!-- Tab panels container -->
+      <div id="tabPanels" class="tab-panels">
+        <!-- RESULTS TAB (default open) -->
+        <section id="tabResults" class="tab-panel active show" role="tabpanel" aria-hidden="false"
+                 aria-labelledby="tabBtnResults">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h1 class="h2">Comparison to control</h1>
+                <p class="small muted" data-tip="This view compares each treatment to the control within each replicate, then applies discounted cost and benefit calculations under the selected scenario.">
+                  Select a price, discount rate and persistence pattern, then review the leaderboard and the comparison table.
+                </p>
               </div>
-
-              <div class="field">
-                <label for="selectPriceScenario" data-tooltip="Grain price used to value yield changes.">
-                  Grain price (AUD per tonne)
-                </label>
-                <select id="selectPriceScenario"></select>
-              </div>
-
-              <div class="field">
-                <label for="selectDiscountRate" data-tooltip="Discount rate used to compute present values.">
-                  Discount rate
-                </label>
-                <select id="selectDiscountRate"></select>
-              </div>
-
-              <div class="field">
-                <label for="selectPersistencePattern" data-tooltip="How long yield effects persist across years.">
-                  Yield persistence
-                </label>
-                <select id="selectPersistencePattern"></select>
-              </div>
-
-              <div class="field">
-                <label for="selectViewScale" data-tooltip="Choose whether results are shown per hectare or scaled to a target area.">
-                  View scale
-                </label>
-                <select id="selectViewScale">
-                  <option value="per_ha">Per hectare</option>
-                  <option value="ha_100">100 hectares</option>
-                  <option value="ha_3300">3300 hectares</option>
-                </select>
-              </div>
-
-              <div class="field actions">
-                <button id="btnManageScenarios" type="button" class="btn">
-                  Manage scenarios
+              <div class="panel-actions">
+                <button id="resBtnRecalc" class="btn primary" type="button"
+                        data-tip="Recalculate all results from the committed dataset and the current configuration.">
+                  Refresh results
                 </button>
               </div>
             </div>
 
-            <div id="scenarioHelp" class="scenario-help small muted">
-              Changes update rankings and comparison instantly. If the time horizon does not match the selected persistence vector length, the tool will adjust or warn.
-            </div>
-          </div>
+            <!-- Scenario selectors -->
+            <div id="resScenarioBar" class="scenario-bar" role="region" aria-label="Scenario selection">
+              <div class="field">
+                <label for="resSelectPrice" data-tip="Choose the grain price per tonne used to value yield changes.">
+                  Grain price (AUD per tonne)
+                </label>
+                <select id="resSelectPrice"></select>
+              </div>
 
-          <!-- Leaderboard -->
-          <div id="leaderboardCard" class="card subtle">
-            <div class="card-header">
-              <h2 class="h2">Snapshot leaderboard</h2>
-              <div id="leaderboardFilters" class="btn-group" role="group" aria-label="Leaderboard filters">
-                <button id="filterTopNPV" type="button" class="btn small">Top 5 by net present value</button>
-                <button id="filterTopBCR" type="button" class="btn small">Top 5 by benefit cost ratio</button>
-                <button id="filterOnlyImprovements" type="button" class="btn small">Show only improvements vs control</button>
-                <button id="filterShowAll" type="button" class="btn small ghost">Show all</button>
+              <div class="field">
+                <label for="resSelectDiscount" data-tip="Choose the annual discount rate used for present value calculations.">
+                  Discount rate (per year)
+                </label>
+                <select id="resSelectDiscount"></select>
+              </div>
+
+              <div class="field">
+                <label for="resSelectPersistence" data-tip="Choose how long yield effects persist over time.">
+                  Yield persistence pattern
+                </label>
+                <select id="resSelectPersistence"></select>
+              </div>
+
+              <div id="resViewScale" class="field scale-toggle" role="group" aria-label="View scale">
+                <div class="label" data-tip="Switch between per hectare results and scaled totals for farm areas.">
+                  View scale
+                </div>
+                <div class="segmented">
+                  <label class="seg">
+                    <input id="resScalePerHa" type="radio" name="resScale" value="per_ha" checked />
+                    <span>Per hectare</span>
+                  </label>
+                  <label class="seg">
+                    <input id="resScale100ha" type="radio" name="resScale" value="ha_100" />
+                    <span>100 hectares</span>
+                  </label>
+                  <label class="seg">
+                    <input id="resScale3300ha" type="radio" name="resScale" value="ha_3300" />
+                    <span>3300 hectares</span>
+                  </label>
+                </div>
               </div>
             </div>
 
-            <div id="leaderboardTableWrap" class="table-scroll wide" aria-label="Leaderboard table">
-              <table id="leaderboardTable" class="summary-table">
-                <thead>
-                  <tr>
-                    <th>Rank</th>
-                    <th>Treatment</th>
-                    <th>Net present value</th>
-                    <th>Present value of benefits</th>
-                    <th>Present value of costs</th>
-                    <th>Net present value (100 hectares)</th>
-                    <th>Net present value (3300 hectares)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colspan="7" class="muted small">No results yet. Commit a dataset to populate the leaderboard.</td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- Quick filters -->
+            <div id="resFilterBar" class="filter-bar" role="region" aria-label="Quick filters">
+              <div class="filter-group">
+                <button id="resFilterAll" type="button" class="btn small"
+                        data-tip="Show all treatments that are included in rankings.">
+                  Show all
+                </button>
+                <button id="resFilterTopNPV" type="button" class="btn small"
+                        data-tip="Show the top five treatments by net present value under the selected scenario.">
+                  Top 5 by net present value
+                </button>
+                <button id="resFilterTopBCR" type="button" class="btn small"
+                        data-tip="Show the top five treatments by benefit cost ratio under the selected scenario.">
+                  Top 5 by benefit cost ratio
+                </button>
+                <button id="resFilterImprove" type="button" class="btn small"
+                        data-tip="Show only treatments that improve net present value compared with the control under the selected scenario.">
+                  Improvements versus control
+                </button>
+              </div>
             </div>
-          </div>
 
-          <!-- Comparison to Control -->
-          <div id="comparisonCard" class="card subtle">
-            <div class="card-header">
-              <h2 class="h2">Comparison to control</h2>
-              <p class="small muted">
-                Indicators are rows and treatments are columns. The control column is pinned.
-                Each treatment includes level values and deltas versus the control.
+            <!-- Notes / warnings -->
+            <div id="resNotesCard" class="card subtle" role="region" aria-label="Notes and warnings">
+              <div class="card-row">
+                <h3 class="h4">Notes</h3>
+                <p id="resNotesText" class="small muted">
+                  Import and commit data to populate results. If any replicate has no control plots, it will be excluded from incremental calculations and flagged here.
+                </p>
+              </div>
+            </div>
+
+            <!-- Leaderboard -->
+            <div id="resLeaderboardWrap" class="leaderboard-wrap" role="region" aria-label="Treatment leaderboard">
+              <div class="leaderboard-head">
+                <h3 class="h3">Leaderboard</h3>
+                <p class="small muted" data-tip="Ranks are computed within the selected scenario slice. Control is shown for context but is not ranked.">
+                  One row per treatment with key indicators under the selected scenario.
+                </p>
+              </div>
+
+              <div class="table-scroll wide">
+                <table id="resLeaderboardTable" class="data-table" aria-label="Leaderboard table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Rank</th>
+                      <th scope="col">Treatment</th>
+                      <th scope="col">Net present value</th>
+                      <th scope="col">Net present value (100 hectares)</th>
+                      <th scope="col">Net present value (3300 hectares)</th>
+                      <th scope="col">Present value of benefits</th>
+                      <th scope="col">Present value of costs</th>
+                      <th scope="col">Benefit cost ratio</th>
+                      <th scope="col">Return on investment</th>
+                    </tr>
+                  </thead>
+                  <tbody id="resLeaderboardTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Comparison to Control Table -->
+            <div id="resComparisonWrap" class="comparison-wrap" role="region" aria-label="Comparison to control table">
+              <div class="comparison-head">
+                <h3 class="h3">Comparison to control</h3>
+                <p class="small muted" data-tip="Rows are indicators. Columns are the control and each treatment. Delta columns show how each treatment differs from the control under the selected scenario.">
+                  Scroll sideways to see all treatments. The indicator column and the control column remain pinned.
+                </p>
+              </div>
+
+              <div class="table-scroll wide comparison-scroll" aria-label="Scrollable comparison table">
+                <table id="resComparisonTable" class="data-table comparison-table">
+                  <thead id="resComparisonThead"></thead>
+                  <tbody id="resComparisonTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- What this means -->
+            <div id="resWhatMeansCard" class="card" role="region" aria-label="What this means">
+              <h3 class="h3">What this means</h3>
+              <p class="small muted" data-tip="This narrative is generated from the computed results under the selected scenario. It is written for farmers and decision makers and avoids technical language in the main interface.">
+                Plain language interpretation based on the current scenario.
               </p>
-            </div>
-
-            <div id="comparisonTableWrap" class="table-scroll wide sticky-grid" aria-label="Comparison to control table">
-              <table id="comparisonTable" class="comparison-table">
-                <thead>
-                  <tr>
-                    <th class="sticky-col">Indicator</th>
-                    <th class="sticky-head">Control (baseline)</th>
-                    <th class="sticky-head">Treatments will appear after commit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td class="sticky-col">Present value of benefits</td>
-                    <td>Not available</td>
-                    <td>Not available</td>
-                  </tr>
-                  <tr>
-                    <td class="sticky-col">Present value of costs</td>
-                    <td>Not available</td>
-                    <td>Not available</td>
-                  </tr>
-                  <tr>
-                    <td class="sticky-col">Net present value</td>
-                    <td>Not available</td>
-                    <td>Not available</td>
-                  </tr>
-                  <tr>
-                    <td class="sticky-col">Benefit cost ratio</td>
-                    <td>Not available</td>
-                    <td>Not available</td>
-                  </tr>
-                  <tr>
-                    <td class="sticky-col">Return on investment</td>
-                    <td>Not available</td>
-                    <td>Not available</td>
-                  </tr>
-                  <tr>
-                    <td class="sticky-col">Rank</td>
-                    <td>Not available</td>
-                    <td>Not available</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div id="resultsNotes" class="small muted results-notes">
-              Benefit cost ratio and return on investment are shown as “Not applicable” when present value of costs is zero or negative.
-              Deltas are shown against the control under the selected scenario.
+              <div id="resWhatMeansText" class="prose">
+                Import and commit data to generate the narrative interpretation.
+              </div>
             </div>
           </div>
+        </section>
 
-          <!-- What this means -->
-          <div id="whatThisMeansCard" class="card subtle">
-            <div class="card-header">
-              <h2 class="h2">What this means</h2>
-              <p class="small muted">
-                This is a plain language summary for farmers and decision makers. It updates when the scenario changes.
-              </p>
+        <!-- DATA IMPORT TAB -->
+        <section id="tabImport" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnImport">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h2 class="h2">Data import</h2>
+                <p class="small muted" data-tip="Upload or paste the full dataset and the full data dictionary. Then validate, preview, and commit. The tool does not drop columns or truncate rows.">
+                  Follow the steps: upload or paste, validate, preview, then commit.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <button id="impBtnResetAll" class="btn ghost" type="button"
+                        data-tip="Reset the tool state and clear any committed data.">
+                  Reset tool
+                </button>
+              </div>
             </div>
-            <div id="whatThisMeansText" class="narrative" aria-live="polite">
-              Commit a dataset to generate a scenario-specific interpretation.
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <!-- IMPORT TAB -->
-      <section id="tabImport" class="tab-panel" aria-hidden="true" role="tabpanel" aria-label="Data import and validation">
-        <div class="card">
-          <h1 class="h1">Data import and validation</h1>
-          <p class="small muted">
-            You can upload or paste the full trial dataset and the data dictionary. Then validate and commit.
-            Missing values such as question marks and blanks are treated as missing, not zero.
-          </p>
+            <!-- Step 1: Upload or paste dataset -->
+            <div id="impStepUpload" class="step-card" role="region" aria-label="Step 1 upload or paste dataset">
+              <div class="step-head">
+                <div class="step-num">Step 1</div>
+                <div class="step-title">
+                  <h3 class="h3">Upload or paste the dataset</h3>
+                  <p class="small muted">Accepted formats: tab separated values, comma separated values, or plain text.</p>
+                </div>
+              </div>
 
-          <div id="importSteps" class="import-steps">
-            <!-- Step 1: Dataset -->
-            <div class="card subtle">
-              <h2 class="h2">Step 1: Provide the trial dataset</h2>
               <div class="row-2">
                 <div class="field">
-                  <label for="inputDataFile" data-tooltip="Upload a full dataset file. Supported formats: TSV, CSV, and TXT.">
-                    Upload dataset file (TSV, CSV, or TXT)
+                  <label for="impFileData" data-tip="Upload the full trial dataset as a TSV or CSV file.">
+                    Upload dataset file
                   </label>
-                  <input id="inputDataFile" type="file" accept=".tsv,.csv,.txt,text/tab-separated-values,text/csv,text/plain" />
+                  <input id="impFileData" type="file" accept=".tsv,.csv,.txt" />
+                  <div class="small muted">
+                    The dataset must include plot level observations and replicate identifiers.
+                  </div>
                 </div>
+
                 <div class="field">
-                  <label for="inputDataPaste" data-tooltip="Paste the full dataset as tab-delimited text. The first row should contain column headers.">
-                    Or paste dataset (tab-delimited)
+                  <label for="impPasteData" data-tip="Paste the full dataset here. Tabs are preferred. The tool will detect the delimiter.">
+                    Paste dataset (tab delimited recommended)
                   </label>
-                  <textarea id="inputDataPaste" class="mono" rows="8" spellcheck="false" placeholder="Paste full dataset here (tab-delimited)"></textarea>
+                  <textarea id="impPasteData" class="mono" rows="8" placeholder="Paste the full dataset here."></textarea>
+                  <div class="toolbar">
+                    <button id="impBtnClearData" type="button" class="btn small"
+                            data-tip="Clear the staged dataset text and file selection.">
+                      Clear dataset
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
             <!-- Step 2: Dictionary -->
-            <div class="card subtle">
-              <h2 class="h2">Step 2: Provide the data dictionary</h2>
+            <div id="impStepDict" class="step-card" role="region" aria-label="Step 2 dictionary">
+              <div class="step-head">
+                <div class="step-num">Step 2</div>
+                <div class="step-title">
+                  <h3 class="h3">Upload or paste the data dictionary</h3>
+                  <p class="small muted">The dictionary drives labels, tooltips, units, and validation messages.</p>
+                </div>
+              </div>
+
               <div class="row-2">
                 <div class="field">
-                  <label for="inputDictFile" data-tooltip="Upload the full dictionary CSV. This is used for labels, units, tooltips, and validation messages.">
+                  <label for="impFileDict" data-tip="Upload the dictionary CSV file. This is recommended for correct labels and tooltips.">
                     Upload dictionary file (CSV)
                   </label>
-                  <input id="inputDictFile" type="file" accept=".csv,text/csv" />
+                  <input id="impFileDict" type="file" accept=".csv,.txt" />
+                  <div class="small muted">
+                    If you do not provide a dictionary, the tool can load a minimal scaffold, but labels will be less informative.
+                  </div>
                 </div>
+
                 <div class="field">
-                  <label for="inputDictPaste" data-tooltip="Paste the full dictionary CSV. This is strongly recommended for future datasets and for clear tooltips.">
-                    Or paste dictionary (CSV)
+                  <label for="impPasteDict" data-tip="Paste the full dictionary CSV here.">
+                    Paste dictionary CSV
                   </label>
-                  <textarea id="inputDictPaste" class="mono" rows="8" spellcheck="false" placeholder="Paste full dictionary CSV here"></textarea>
+                  <textarea id="impPasteDict" class="mono" rows="8" placeholder="Paste the full dictionary CSV here."></textarea>
+                  <div class="toolbar">
+                    <button id="impBtnClearDict" type="button" class="btn small"
+                            data-tip="Clear the staged dictionary text and file selection.">
+                      Clear dictionary
+                    </button>
+                    <button id="impBtnUseSampleDict" type="button" class="btn small ghost"
+                            data-tip="Load a minimal dictionary scaffold for required fields only. This does not load any sample data.">
+                      Load dictionary scaffold
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- Step 3: Parse / Validate / Commit -->
-            <div class="card subtle">
-              <h2 class="h2">Step 3: Parse, validate, and commit</h2>
+            <!-- Step 3: Validate -->
+            <div id="impStepValidate" class="step-card" role="region" aria-label="Step 3 validate">
+              <div class="step-head">
+                <div class="step-num">Step 3</div>
+                <div class="step-title">
+                  <h3 class="h3">Validate</h3>
+                  <p class="small muted">
+                    Validation checks missing controls by replicate, missing or non numeric critical fields, and confirms that no unnamed columns exist.
+                  </p>
+                </div>
+              </div>
+
               <div class="toolbar">
-                <button id="btnParseInputs" type="button" class="btn">Parse inputs</button>
-                <button id="btnValidate" type="button" class="btn primary">Validate</button>
-                <button id="btnCommit" type="button" class="btn primary">Commit dataset</button>
-                <button id="btnResetSession" type="button" class="btn ghost">Reset session</button>
+                <button id="impBtnValidate" type="button" class="btn primary"
+                        data-tip="Run validation on the staged dataset and dictionary without committing.">
+                  Validate
+                </button>
+                <button id="impBtnCommit" type="button" class="btn"
+                        data-tip="Commit the staged dataset and dictionary after validation. Once committed, all tabs update.">
+                  Commit dataset
+                </button>
               </div>
-
-              <div id="importStatus" class="status-line" role="status" aria-live="polite">
-                No inputs parsed yet.
-              </div>
-
-              <div id="importWarnings" class="warnings" aria-live="polite"></div>
 
               <div class="row-2">
-                <div id="importPreviewMeta" class="card subtle">
-                  <h3 class="h3">Preview</h3>
-                  <div class="small muted">
-                    This preview summarises the import. The full dataset is used internally without truncation.
-                  </div>
-                  <div class="kv-grid" aria-label="Preview metadata">
-                    <div class="kv"><div class="k">Rows</div><div class="v" data-preview="rows">0</div></div>
-                    <div class="kv"><div class="k">Columns</div><div class="v" data-preview="cols">0</div></div>
-                    <div class="kv"><div class="k">Replicates</div><div class="v" data-preview="replicates">0</div></div>
-                    <div class="kv"><div class="k">Treatments</div><div class="v" data-preview="treatments">0</div></div>
-                    <div class="kv"><div class="k">Controls</div><div class="v" data-preview="controls">0</div></div>
-                    <div class="kv"><div class="k">Dictionary loaded</div><div class="v" data-preview="dict">No</div></div>
-                  </div>
+                <div class="card subtle">
+                  <h4 class="h4">Validation summary</h4>
+                  <div id="impValidationSummary" class="small">No validation run yet.</div>
                 </div>
 
                 <div class="card subtle">
-                  <h3 class="h3">Key fields check</h3>
-                  <div class="small muted">
-                    This table helps confirm the required columns are present before committing.
-                  </div>
-                  <div class="table-scroll">
-                    <table id="previewKeyFieldsTable" class="summary-table">
-                      <thead>
-                        <tr>
-                          <th>Field</th>
-                          <th>Status</th>
-                          <th>Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td>replicate_id</td>
-                          <td class="muted">Not checked yet</td>
-                          <td class="muted">Needed for replicate-specific control baselines</td>
-                        </tr>
-                        <tr>
-                          <td>amendment_name</td>
-                          <td class="muted">Not checked yet</td>
-                          <td class="muted">Used for treatment names and control identification</td>
-                        </tr>
-                        <tr>
-                          <td>treatment_id</td>
-                          <td class="muted">Not checked yet</td>
-                          <td class="muted">Control when treatment_id equals 1</td>
-                        </tr>
-                        <tr>
-                          <td>yield_t_ha</td>
-                          <td class="muted">Not checked yet</td>
-                          <td class="muted">Used to compute yield changes and benefits</td>
-                        </tr>
-                        <tr>
-                          <td>total_cost_per_ha_raw</td>
-                          <td class="muted">Not checked yet</td>
-                          <td class="muted">Used with the scaling rule to reconstruct total cost</td>
-                        </tr>
-                        <tr>
-                          <td>cost_amendment_input_per_ha_raw</td>
-                          <td class="muted">Not checked yet</td>
-                          <td class="muted">Used for scaling rule and total cost reconstruction</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                  <h4 class="h4">Validation details</h4>
+                  <div id="impValidationDetails" class="small muted">
+                    Detailed messages will appear here after validation.
                   </div>
                 </div>
               </div>
 
-              <div id="dataChecksCard" class="card subtle">
-                <h3 class="h3">Data checks: amendment cost scaling</h3>
-                <p class="small muted">
-                  If amendment input cost is larger than 1000 in the raw column, the tool treats it as being stored at about 100 times scale
-                  and divides by 100 before reconstructing the total cost per hectare.
-                </p>
-                <div id="scalingRuleSummary" class="status-line">No scaling checks run yet.</div>
-
-                <div class="table-scroll wide">
-                  <table id="scalingRuleTable" class="summary-table">
-                    <thead>
-                      <tr>
-                        <th>Amendment</th>
-                        <th>Plots with scaling applied</th>
-                        <th>Raw amendment input cost (summary)</th>
-                        <th>Scaled amendment input cost (summary)</th>
-                        <th>Adjusted total cost (summary)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td colspan="5" class="muted small">Validate the dataset to populate scaling checks.</td>
-                      </tr>
-                    </tbody>
-                  </table>
+              <div class="row-3">
+                <div id="impWarnNoControls" class="banner warning" role="alert" hidden>
+                  Some replicates have no control plots. Those replicates will be excluded from incremental calculations.
                 </div>
-              </div>
-
-              <div class="card subtle">
-                <h3 class="h3">Exports from imported data</h3>
-                <p class="small muted">
-                  These exports use the parsed and cleaned dataset and the computed summaries. They are designed to open cleanly in Excel.
-                </p>
-                <div class="toolbar">
-                  <button id="btnExportCleanTSV" type="button" class="btn">Export cleaned dataset (TSV)</button>
-                  <button id="btnExportTreatmentSummaryCSV" type="button" class="btn">Export treatment summary (CSV)</button>
-                  <button id="btnExportSensitivityGridCSV" type="button" class="btn">Export full sensitivity grid (CSV)</button>
-                  <button id="btnExportCSVPackZip" type="button" class="btn ghost">Export all as a pack</button>
+                <div id="impWarnUnnamedCols" class="banner danger" role="alert" hidden>
+                  Unnamed columns were detected. Remove unnamed columns before committing.
+                </div>
+                <div id="impWarnMissingCritical" class="banner warning" role="alert" hidden>
+                  Missing or non numeric values were detected in critical fields. The tool treats these as missing and excludes them from averages.
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <!-- DIAGNOSTICS TAB -->
-      <section id="tabDiagnostics" class="tab-panel" aria-hidden="true" role="tabpanel" aria-label="Diagnostics">
-        <div class="card">
-          <h1 class="h1">Diagnostics</h1>
-          <p class="small muted">
-            Diagnostics check replicate controls, missing critical fields, scaling triggers, and small sample sizes.
-            Replicates without controls are excluded from delta calculations and will be clearly listed here.
-          </p>
-
-          <div class="toolbar">
-            <button id="btnRunDiagnostics" type="button" class="btn primary">Run diagnostics</button>
-          </div>
-
-          <div id="diagnosticsSummaryCard" class="card subtle">
-            <h2 class="h2">Diagnostics summary</h2>
-            <div id="diagnosticsSummaryText" class="status-line" role="status" aria-live="polite">
-              No diagnostics run yet.
-            </div>
-          </div>
-
-          <div id="diagnosticsTableWrap" class="table-scroll wide" aria-label="Diagnostics table">
-            <table id="diagnosticsTable" class="summary-table">
-              <thead>
-                <tr>
-                  <th>Check</th>
-                  <th>Status</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Replicates missing controls</td>
-                  <td class="muted">Not checked yet</td>
-                  <td class="muted">Validate and commit data, then run diagnostics</td>
-                </tr>
-                <tr>
-                  <td>Missing or non numeric critical fields</td>
-                  <td class="muted">Not checked yet</td>
-                  <td class="muted">Yield and cost fields are required for present value calculations</td>
-                </tr>
-                <tr>
-                  <td>Scaling rule triggers</td>
-                  <td class="muted">Not checked yet</td>
-                  <td class="muted">Shows where amendment input costs were adjusted</td>
-                </tr>
-                <tr>
-                  <td>Treatments with few plots</td>
-                  <td class="muted">Not checked yet</td>
-                  <td class="muted">Still computed but flagged for uncertainty</td>
-                </tr>
-                <tr>
-                  <td>Present value costs are zero or negative</td>
-                  <td class="muted">Not checked yet</td>
-                  <td class="muted">Benefit cost ratio and return on investment become not applicable</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- CONFIGURATION TAB -->
-      <section id="tabConfiguration" class="tab-panel" aria-hidden="true" role="tabpanel" aria-label="Configuration">
-        <div class="card">
-          <h1 class="h1">Configuration</h1>
-          <p class="small muted">
-            Set cost recurrence and inclusion for each treatment. The control is read only and always included.
-            Apply configuration to recompute rankings and comparison tables.
-          </p>
-
-          <div id="configSummaryCard" class="card subtle">
-            <h2 class="h2">Current configuration at a glance</h2>
-            <div id="configSummaryText" class="status-line" role="status" aria-live="polite">
-              No dataset committed yet. Commit data to configure treatments.
-            </div>
-          </div>
-
-          <div id="configTableWrap" class="table-scroll wide" aria-label="Configuration table">
-            <table id="configTable" class="summary-table">
-              <thead>
-                <tr>
-                  <th>Treatment</th>
-                  <th>Is control</th>
-                  <th>Cost recurrence</th>
-                  <th>Include in rankings</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td class="muted">No treatments loaded</td>
-                  <td class="muted">—</td>
-                  <td class="muted">—</td>
-                  <td class="muted">—</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="toolbar">
-            <button id="btnApplyConfiguration" type="button" class="btn primary">Apply configuration</button>
-            <button id="btnViewResultsSummary" type="button" class="btn">View results summary</button>
-            <button id="btnSaveScenario" type="button" class="btn ghost">Save scenario</button>
-            <button id="btnLoadScenario" type="button" class="btn ghost">Load scenario</button>
-          </div>
-
-          <div id="scenarioStoreStatus" class="status-line" role="status" aria-live="polite">
-            No saved scenario action yet.
-          </div>
-        </div>
-      </section>
-
-      <!-- AI BRIEFING TAB -->
-      <section id="tabAIBriefing" class="tab-panel" aria-hidden="true" role="tabpanel" aria-label="AI briefing">
-        <div class="card">
-          <h1 class="h1">AI briefing</h1>
-          <div id="aiBriefingIntro" class="small muted">
-            This tab prepares a copy-ready briefing prompt and a structured results JSON based only on computed results and the current scenario.
-            The text is written for decision makers and farmers and avoids abbreviations.
-          </div>
-
-          <div class="row-2">
-            <div class="field">
-              <label for="aiBriefingPrompt" data-tooltip="Copy-ready prompt describing the dataset, scenario settings, rankings, trade-offs, sensitivity patterns, and uncertainty.">
-                Briefing prompt (copy-ready)
-              </label>
-              <textarea id="aiBriefingPrompt" class="mono" rows="16" spellcheck="false"></textarea>
-
-              <div class="toolbar">
-                <button id="btnCopyBriefingPrompt" type="button" class="btn primary">Copy briefing prompt</button>
+            <!-- Preview -->
+            <div id="impPreviewCard" class="card" role="region" aria-label="Preview">
+              <h3 class="h3">Preview</h3>
+              <div class="row-2">
+                <div class="card subtle">
+                  <h4 class="h4">Counts</h4>
+                  <div id="impPreviewCounts" class="small muted">
+                    Rows, columns, replicates and treatments will appear here after parsing.
+                  </div>
+                </div>
+                <div class="card subtle">
+                  <h4 class="h4">Key fields</h4>
+                  <div id="impPreviewKeyFields" class="small muted">
+                    Detected delimiter and key columns will appear here.
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="aiResultsJSON" data-tooltip="Structured JSON containing scenario settings, treatment results, deltas versus control, and rankings.">
-                Results JSON (structured)
-              </label>
-              <textarea id="aiResultsJSON" class="mono" rows="16" spellcheck="false" readonly></textarea>
-
-              <div class="toolbar">
-                <button id="btnCopyResultsJSON" type="button" class="btn">Copy results JSON</button>
+              <div class="table-scroll wide">
+                <table class="data-table" aria-label="Preview first rows">
+                  <thead></thead>
+                  <tbody id="impPreviewFirstRows"></tbody>
+                </table>
               </div>
             </div>
           </div>
+        </section>
 
-          <div id="aiBriefingStatus" class="status-line" role="status" aria-live="polite">
-            No briefing generated yet.
-          </div>
-        </div>
-      </section>
-
-      <!-- EXPORTS TAB -->
-      <section id="tabExports" class="tab-panel" aria-hidden="true" role="tabpanel" aria-label="Exports">
-        <div class="card">
-          <h1 class="h1">Exports</h1>
-          <div id="exportsIntro" class="small muted">
-            Export the current scenario slice or a workbook-like file if supported by your browser. These outputs are designed to open cleanly in Excel and to be copied into Word.
-          </div>
-
-          <div id="exportButtonsGroup" class="toolbar" role="group" aria-label="Export actions">
-            <button id="btnExportResultsSliceCSV" type="button" class="btn primary">Export current results slice (CSV)</button>
-            <button id="btnExportResultsSliceTSV" type="button" class="btn">Export current results slice (TSV)</button>
-            <button id="btnExportWorkbookXLSX" type="button" class="btn ghost">Export workbook-like file (XLSX)</button>
-          </div>
-
-          <div id="exportStatus" class="status-line" role="status" aria-live="polite">
-            No export prepared yet.
-          </div>
-
-          <hr />
-
-          <div class="card subtle">
-            <h2 class="h2">Data exports</h2>
-            <p class="small muted">
-              These exports are also available from the import tab once data is parsed and validated.
-            </p>
-            <div class="toolbar">
-              <button id="btnExportCleanTSV" type="button" class="btn">Export cleaned dataset (TSV)</button>
-              <button id="btnExportTreatmentSummaryCSV" type="button" class="btn">Export treatment summary (CSV)</button>
-              <button id="btnExportSensitivityGridCSV" type="button" class="btn">Export full sensitivity grid (CSV)</button>
-              <button id="btnExportCSVPackZip" type="button" class="btn ghost">Export all as a pack</button>
+        <!-- CONFIGURATION TAB -->
+        <section id="tabConfig" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnConfig">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h2 class="h2">Configuration</h2>
+                <p class="small muted" data-tip="Set the analysis horizon, discount rates, grain prices, persistence patterns, and cost recurrence by treatment.">
+                  These settings drive the discounted cash flow analysis and the sensitivity grid.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <button id="cfgBtnValidateScenario" class="btn" type="button"
+                        data-tip="Check that the time horizon and persistence vectors are valid and consistent.">
+                  Check scenario
+                </button>
+                <button id="cfgBtnApply" class="btn primary" type="button"
+                        data-tip="Apply configuration changes and recalculate the full sensitivity grid.">
+                  Apply configuration
+                </button>
+                <button id="cfgBtnViewSummary" class="btn ghost" type="button"
+                        data-tip="Go to results with the currently applied configuration.">
+                  View results summary
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
-    </main>
 
-    <!-- Global modal -->
-    <div id="modalOverlay" class="modal-overlay" hidden></div>
-    <div id="modalShell" class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
-      <div class="modal-card">
-        <div class="modal-header">
-          <div id="modalTitle" class="modal-title">Dialog</div>
-          <button id="modalClose" type="button" class="btn small ghost" aria-label="Close dialog">Close</button>
-        </div>
-        <div id="modalBody" class="modal-body">
-          <section id="modalScenarioManager" class="scenario-manager" aria-label="Scenario manager">
+            <div id="cfgScenarioCard" class="card subtle" role="region" aria-label="Current configuration at a glance">
+              <h3 class="h3">Current configuration at a glance</h3>
+              <div class="row-4">
+                <div class="metric">
+                  <div class="label">Selected grain price</div>
+                  <div id="cfgSummaryPrice" class="value small muted">Not set</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Selected discount rate</div>
+                  <div id="cfgSummaryDiscount" class="value small muted">Not set</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Selected persistence</div>
+                  <div id="cfgSummaryPersistence" class="value small muted">Not set</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Time horizon</div>
+                  <div id="cfgSummaryHorizon" class="value small muted">10 years</div>
+                </div>
+              </div>
+              <div class="row-2">
+                <div class="metric">
+                  <div class="label">Data counts</div>
+                  <div id="cfgSummaryCounts" class="value small muted">No data committed yet</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Scenario status</div>
+                  <div id="cfgScenarioStatus" class="value small muted">No changes applied yet</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-3">
+              <div class="field">
+                <label for="cfgHorizon" data-tip="Number of years used in present value calculations. Default is 10.">
+                  Time horizon (years)
+                </label>
+                <input id="cfgHorizon" type="number" min="1" value="10" />
+              </div>
+
+              <div class="field">
+                <label for="cfgDiscountRates" data-tip="Add a discount rate value. Example: 0.07 for 7 percent.">
+                  Add discount rate
+                </label>
+                <div class="input-row">
+                  <input id="cfgDiscountRates" type="text" placeholder="e.g., 0.07" class="mono" />
+                  <button id="cfgBtnAddDiscount" type="button" class="btn"
+                          data-tip="Add this discount rate to the list.">
+                    Add
+                  </button>
+                </div>
+                <div id="cfgDiscountList" class="chip-list" aria-label="Discount rate list"></div>
+              </div>
+
+              <div class="field">
+                <label for="cfgPrices" data-tip="Add a grain price in AUD per tonne. Example: 450.">
+                  Add grain price
+                </label>
+                <div class="input-row">
+                  <input id="cfgPrices" type="text" placeholder="e.g., 450" class="mono" />
+                  <button id="cfgBtnAddPrice" type="button" class="btn"
+                          data-tip="Add this grain price to the list.">
+                    Add
+                  </button>
+                </div>
+                <div id="cfgPriceList" class="chip-list" aria-label="Grain price list"></div>
+              </div>
+            </div>
+
             <div class="row-2">
-              <div class="card subtle">
-                <h3 class="h3">Grain prices</h3>
-                <p class="small muted">Add or remove prices used in the sensitivity grid.</p>
-                <div class="row-inline">
-                  <label class="sr-only" for="inputAddPrice">Add price</label>
-                  <input id="inputAddPrice" type="number" min="0" step="1" placeholder="e.g., 450" />
-                  <button id="btnAddPrice" type="button" class="btn small">Add</button>
+              <div class="field">
+                <label for="cfgPersistenceSelect" data-tip="Select a persistence pattern to use or edit.">
+                  Persistence patterns
+                </label>
+                <select id="cfgPersistenceSelect"></select>
+                <div class="small muted">
+                  A persistence pattern is a list of multipliers, one per year, applied to yield changes.
                 </div>
-                <div id="managePricesList" class="list-box" aria-label="Price scenarios list"></div>
               </div>
 
-              <div class="card subtle">
-                <h3 class="h3">Discount rates</h3>
-                <p class="small muted">Add or remove discount rates used in the sensitivity grid.</p>
-                <div class="row-inline">
-                  <label class="sr-only" for="inputAddDiscount">Add discount rate</label>
-                  <input id="inputAddDiscount" type="number" min="0" step="0.001" placeholder="e.g., 0.07" />
-                  <button id="btnAddDiscount" type="button" class="btn small">Add</button>
+              <div class="field">
+                <label for="cfgPersistenceEditor" data-tip="Edit the persistence multipliers. Use commas. Length should match the time horizon or will be adjusted with a warning.">
+                  Persistence vector editor
+                </label>
+                <textarea id="cfgPersistenceEditor" class="mono" rows="4" placeholder="e.g., 1,0.5,0.25,0,0,0,0,0,0,0"></textarea>
+                <div class="row-3">
+                  <div class="field">
+                    <label for="cfgPersistenceName" data-tip="Name for a new persistence pattern.">
+                      New pattern name
+                    </label>
+                    <input id="cfgPersistenceName" type="text" placeholder="e.g., 3yr_decay" class="mono" />
+                  </div>
+                  <div class="field">
+                    <button id="cfgBtnAddPersistence" type="button" class="btn"
+                            data-tip="Add a new persistence pattern using the name and vector.">
+                      Add pattern
+                    </button>
+                  </div>
+                  <div class="field">
+                    <button id="cfgBtnUpdatePersistence" type="button" class="btn ghost"
+                            data-tip="Update the currently selected persistence pattern using the editor values.">
+                      Update selected
+                    </button>
+                    <button id="cfgBtnDeletePersistence" type="button" class="btn ghost"
+                            data-tip="Delete the selected persistence pattern. You cannot delete the last remaining pattern.">
+                      Delete selected
+                    </button>
+                  </div>
                 </div>
-                <div id="manageDiscountsList" class="list-box" aria-label="Discount rate list"></div>
+              </div>
+            </div>
+
+            <hr />
+
+            <h3 class="h3">Treatments and cost recurrence</h3>
+            <p class="small muted" data-tip="Set whether each treatment cost is one off, annual, or a custom path. You can also exclude a treatment from rankings without removing it from the table.">
+              Control is shown for context and is flagged as control. Recurrence settings apply to incremental costs.
+            </p>
+
+            <div class="table-scroll wide">
+              <table id="cfgTreatmentTable" class="data-table" aria-label="Treatment configuration table">
+                <thead>
+                  <tr>
+                    <th scope="col">Include in rankings</th>
+                    <th scope="col">Treatment</th>
+                    <th scope="col">Control flag</th>
+                    <th scope="col">Cost recurrence</th>
+                    <th scope="col">Custom cost path (optional)</th>
+                  </tr>
+                </thead>
+                <tbody id="cfgTreatmentsTbody"></tbody>
+              </table>
+            </div>
+
+            <hr />
+
+            <h3 class="h3">Scenario management</h3>
+            <div class="row-2">
+              <div class="field">
+                <label for="cfgScenarioName" data-tip="Name used to save and load scenarios from your browser storage.">
+                  Scenario name
+                </label>
+                <input id="cfgScenarioName" type="text" placeholder="e.g., baseline_10yr" class="mono" />
+                <div class="toolbar">
+                  <button id="cfgBtnScenarioSave" type="button" class="btn primary"
+                          data-tip="Save the current scenario to browser storage.">
+                    Save scenario
+                  </button>
+                  <button id="cfgBtnScenarioLoad" type="button" class="btn"
+                          data-tip="Load a saved scenario from browser storage using the scenario name.">
+                    Load scenario
+                  </button>
+                  <button id="cfgBtnScenarioExport" type="button" class="btn ghost"
+                          data-tip="Download the current scenario as a JSON file.">
+                    Export scenario JSON
+                  </button>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="cfgFileScenarioImport" data-tip="Import a scenario JSON file that was exported earlier.">
+                  Import scenario JSON file
+                </label>
+                <input id="cfgFileScenarioImport" type="file" accept=".json" />
+                <div class="toolbar">
+                  <button id="cfgBtnScenarioImport" type="button" class="btn"
+                          data-tip="Import the selected scenario JSON file and apply it.">
+                    Import and apply
+                  </button>
+                </div>
+                <div class="small muted">
+                  Scenarios are stored locally in your browser. They do not leave your computer.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DATA CHECKS TAB -->
+        <section id="tabChecks" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnChecks">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h2 class="h2">Data checks</h2>
+                <p class="small muted" data-tip="These checks explain how costs were constructed and whether any cost fields required scaling.">
+                  Review scaling rule triggers, missing values by column, and replicate control availability.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <button id="chkBtnReRunChecks" class="btn" type="button"
+                        data-tip="Recompute the data checks from the currently committed dataset.">
+                  Update checks
+                </button>
+                <button id="chkBtnExportChecks" class="btn ghost" type="button"
+                        data-tip="Export the data checks tables as a CSV file for Excel.">
+                  Export checks CSV
+                </button>
+              </div>
+            </div>
+
+            <div id="chkScalingCard" class="card subtle" role="region" aria-label="Scaling rule">
+              <h3 class="h3">Amendment input cost scaling rule</h3>
+              <p class="small muted" data-tip="If the raw amendment input cost is greater than 1000, the tool divides it by 100 and reconstructs total cost so that inputs are on a consistent scale.">
+                Some amendment input cost values appear to be stored at about one hundred times scale. The tool corrects this when the raw amendment input cost is greater than one thousand.
+              </p>
+              <div id="chkScalingSummary" class="small">
+                No checks run yet.
+              </div>
+
+              <div class="table-scroll wide">
+                <table id="chkScalingTable" class="data-table" aria-label="Scaling triggers table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Treatment</th>
+                      <th scope="col">Count of plots affected</th>
+                      <th scope="col">Raw amendment input cost (summary)</th>
+                      <th scope="col">Corrected amendment input cost (summary)</th>
+                      <th scope="col">Impact on total cost (summary)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="chkScalingTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="chkMissingByColumnCard" class="card subtle" role="region" aria-label="Missing values by column">
+              <h3 class="h3">Missing values by column</h3>
+              <p class="small muted" data-tip="Missing includes blank cells, question marks, and non numeric text in numeric columns. Missing values are excluded from means and standard deviations.">
+                This table shows how many rows have missing values for each column.
+              </p>
+
+              <div class="table-scroll wide">
+                <table id="chkMissingByColumnTable" class="data-table" aria-label="Missing values by column table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Column</th>
+                      <th scope="col">Label</th>
+                      <th scope="col">Missing rows</th>
+                      <th scope="col">Total rows</th>
+                      <th scope="col">Percent missing</th>
+                    </tr>
+                  </thead>
+                  <tbody id="chkMissingByColumnTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="chkReplicateControlCard" class="card subtle" role="region" aria-label="Replicate control availability">
+              <h3 class="h3">Control availability by replicate</h3>
+              <p class="small muted" data-tip="Incremental yield and cost are computed within each replicate, using the replicate mean of the control plots as the baseline. Replicates without controls are excluded from delta calculations.">
+                Each replicate must have control plots for replicate specific baselines.
+              </p>
+
+              <div class="table-scroll wide">
+                <table id="chkReplicateControlTable" class="data-table" aria-label="Replicate controls table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Replicate</th>
+                      <th scope="col">Control plots</th>
+                      <th scope="col">Total plots</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="chkReplicateControlTbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DIAGNOSTICS TAB -->
+        <section id="tabDiagnostics" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnDiagnostics">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h2 class="h2">Diagnostics</h2>
+                <p class="small muted" data-tip="Diagnostics highlight issues that can affect results, such as missing controls, missing critical fields, and unusual cost values.">
+                  Use diagnostics to confirm data readiness and identify any warnings before exporting.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <button id="diagBtnRun" class="btn primary" type="button"
+                        data-tip="Run diagnostics on the committed dataset and current configuration.">
+                  Run diagnostics
+                </button>
+                <button id="diagBtnCopy" class="btn ghost" type="button"
+                        data-tip="Copy a plain text diagnostic report to your clipboard.">
+                  Copy report
+                </button>
               </div>
             </div>
 
             <div class="card subtle">
-              <h3 class="h3">Yield persistence patterns</h3>
+              <div class="row-2">
+                <div class="metric">
+                  <div class="label">Overall status</div>
+                  <div id="diagStatusHeadline" class="value small muted">No diagnostics run yet</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Notes</div>
+                  <div class="value small muted">
+                    Missing controls by replicate are critical and will be excluded from incremental calculations.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="h3">Diagnostic items</h3>
+              <div id="diagList" class="diag-list" aria-label="Diagnostic list">
+                Run diagnostics to populate this list.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- AI BRIEFING TAB -->
+        <section id="tabAI" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnAI">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h2 class="h2">AI briefing</h2>
+                <p class="small muted" data-tip="This tab generates a copy-ready briefing prompt and a structured JSON payload based only on computed results and scenario settings.">
+                  Copy the briefing prompt into your preferred assistant, or copy the JSON for another system.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <button id="aiBtnRefresh" class="btn primary" type="button"
+                        data-tip="Regenerate the briefing prompt and the results JSON from current results and scenario settings.">
+                  Update briefing
+                </button>
+              </div>
+            </div>
+
+            <div class="card subtle">
+              <h3 class="h3">Scenario and data summary</h3>
+              <div id="aiScenarioSummary" class="small muted">
+                Import and commit data to generate the briefing.
+              </div>
+            </div>
+
+            <div class="row-2">
+              <div class="field">
+                <div class="toolbar">
+                  <button id="aiBtnCopyBriefing" type="button" class="btn"
+                          data-tip="Copy the briefing prompt text to your clipboard.">
+                    Copy briefing prompt
+                  </button>
+                </div>
+                <label for="aiBriefingText" data-tip="This is the briefing prompt. It is continuous prose with no bullet points and no em dash characters.">
+                  Briefing prompt
+                </label>
+                <textarea id="aiBriefingText" class="mono" rows="16" readonly></textarea>
+                <div class="small muted">
+                  The prompt is written in plain language for farmers and decision makers.
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="toolbar">
+                  <button id="aiBtnCopyJson" type="button" class="btn"
+                          data-tip="Copy the results JSON to your clipboard.">
+                    Copy results JSON
+                  </button>
+                </div>
+                <label for="aiResultsJson" data-tip="Structured results in JSON format: scenario settings, treatment results, rankings, and deltas versus control.">
+                  Results JSON
+                </label>
+                <textarea id="aiResultsJson" class="mono" rows="16" readonly></textarea>
+                <div class="small muted">
+                  Use this JSON to feed another system or to archive scenario outputs.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- EXPORTS TAB -->
+        <section id="tabExports" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnExports">
+          <div class="card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <h2 class="h2">Exports</h2>
+                <p class="small muted" data-tip="Exports are designed to open cleanly in Excel and to be easy to copy into Word.">
+                  Export cleaned data, treatment summaries, and the full sensitivity grid.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <div id="expStatus" class="small muted">No exports yet.</div>
+              </div>
+            </div>
+
+            <div id="expCardNotes" class="card subtle" role="region" aria-label="Export notes">
+              <h3 class="h3">Export notes</h3>
               <p class="small muted">
-                Add a pattern by providing a name and a comma separated vector. Example: 1, 0.5, 0.25
+                Cleaned dataset export includes all original columns plus computed columns used by the tool, including reconstructed total cost per hectare and plot level deltas.
               </p>
+            </div>
+
+            <div id="expCardData" class="card" role="region" aria-label="Export actions">
+              <h3 class="h3">Download files</h3>
               <div class="row-2">
                 <div class="field">
-                  <label for="inputPersistenceName" data-tooltip="Short name for the pattern used in scenario selection.">
-                    Pattern name
-                  </label>
-                  <input id="inputPersistenceName" type="text" placeholder="e.g., 3yr_decay" />
+                  <button id="expBtnExportCleanTSV" type="button" class="btn primary"
+                          data-tip="Download the committed dataset as a cleaned TSV file, including computed columns.">
+                    Export cleaned dataset (TSV)
+                  </button>
+                  <div class="small muted">
+                    Includes all columns and computed fields. Tabs are used as separators for Excel compatibility.
+                  </div>
                 </div>
                 <div class="field">
-                  <label for="inputPersistenceVector" data-tooltip="Comma separated numbers representing the effect multiplier in each year.">
-                    Pattern vector
-                  </label>
-                  <input id="inputPersistenceVector" type="text" placeholder="e.g., 1, 0.5, 0.25, 0, 0" />
+                  <button id="expBtnExportTreatmentCSV" type="button" class="btn"
+                          data-tip="Download a per treatment summary table as CSV.">
+                    Export treatment summary (CSV)
+                  </button>
+                  <div class="small muted">
+                    Includes means, standard deviations, sample sizes, and incremental values versus control within replicate.
+                  </div>
                 </div>
               </div>
-              <div class="toolbar">
-                <button id="btnAddPersistence" type="button" class="btn small">Add pattern</button>
-                <button id="btnSaveScenarioManager" type="button" class="btn primary">Save and apply</button>
-              </div>
-              <div id="managePersistenceList" class="list-box" aria-label="Persistence pattern list"></div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
 
-    <!-- Toasts -->
-    <div id="toastHost" class="toast-host" aria-label="Notifications">
-      <div id="toastRegion" class="sr-only" role="status" aria-live="polite"></div>
-    </div>
+              <div class="row-2">
+                <div class="field">
+                  <button id="expBtnExportSensitivityCSV" type="button" class="btn"
+                          data-tip="Download the full sensitivity grid as CSV, covering all price, discount, persistence, and recurrence combinations.">
+                    Export sensitivity grid (CSV)
+                  </button>
+                  <div class="small muted">
+                    One row per treatment per scenario slice with ranks computed within each slice.
+                  </div>
+                </div>
+                <div class="field">
+                  <button id="expBtnExportWorkbook" type="button" class="btn ghost"
+                          data-tip="Attempt to export a workbook style XLSX file in your browser. If unavailable, the tool will fall back to CSV exports.">
+                    Export workbook (XLSX if available)
+                  </button>
+                  <div class="small muted">
+                    If workbook export is not available, use the CSV exports above.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- INTRODUCTION TAB -->
+        <section id="tabIntro" class="tab-panel" role="tabpanel" aria-hidden="true" aria-labelledby="tabBtnIntro">
+          <div class="card">
+            <div id="introCardOverview" class="card subtle">
+              <h2 class="h2">How to use this tool</h2>
+              <p>
+                This tool compares farm trial treatments against a control using plot level data. It calculates incremental yield and incremental cost within each replicate, then computes discounted costs and benefits under user selected scenarios.
+              </p>
+              <p class="small muted" data-tip="The tool treats question marks and blank cells as missing values and does not treat them as zeros.">
+                Missing values are excluded from averages and standard deviations. Replicates without controls are excluded from incremental calculations and shown as warnings.
+              </p>
+              <div class="row-2">
+                <div class="metric">
+                  <div class="label">Data status</div>
+                  <div id="introDataStatus" class="value small muted">No data committed yet</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Scenario status</div>
+                  <div id="introScenarioStatus" class="value small muted">Default scenario not applied yet</div>
+                </div>
+              </div>
+
+              <div class="intro-actions">
+                <button id="btnIntroGoImport" class="btn primary" type="button"
+                        data-tip="Go to Data Import to upload or paste your dataset and dictionary.">
+                  Go to Data Import
+                </button>
+                <button id="btnIntroGoResults" class="btn" type="button"
+                        data-tip="Go to Results. This requires committed data.">
+                  Go to Results
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <div class="footer-left">
+        <span class="small muted">Farming CBA Decision Aid Tool, Newcastle Business School</span>
+      </div>
+      <div class="footer-right">
+        <a class="small nav-link" href="technical-appendix.html" target="_blank" rel="noopener"
+           data-tip="Open the technical appendix in a new tab.">
+          Technical Appendix
+        </a>
+      </div>
+    </footer>
   </div>
 
+  <!-- Optional XLSX library for workbook export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
 </body>
