@@ -1,790 +1,449 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Technical Appendix - Farming CBA Decision Aid Tool</title>
+  <title>Technical Appendix — Farming CBA Decision Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Technical appendix for the Farming CBA Decision Tool. Methods, formulas, replicate baselines, scaling rules, and sensitivity grid definitions." />
+
   <link rel="stylesheet" href="styles.css" />
+
   <style>
-    .appendix-main {
-      max-width: 1240px;
-      margin: 1.5rem auto 2.5rem;
-      padding: 0 1.25rem 1.5rem;
+    /* Appendix-specific layout that reuses styles.css tokens and components */
+    .appendix-shell { max-width: var(--max); margin: 0 auto; padding: 18px 16px 28px; }
+    .appendix-hero { margin-top: 12px; }
+    .appendix-hero .kicker { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+    .appendix-hero h1 { margin-top: 6px; margin-bottom: 8px; font-size: 26px; }
+    .appendix-hero .sub { color: var(--muted); max-width: 85ch; }
+    .appendix-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    .toc { margin-top: 14px; display: grid; gap: 10px; }
+    .toc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .toc a {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      border-radius: 14px; border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      padding: 10px 12px; color: var(--text);
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      text-decoration: none;
     }
+    .toc a:hover { transform: translateY(-1px); border-color: var(--border-2); background: rgba(255,255,255,0.06); }
+    .toc .label { font-weight: 800; font-size: 13px; line-height: 1.2; }
+    .toc .hint { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; }
+    .math {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(0,0,0,0.28);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 12px;
+      white-space: pre-wrap;
+      line-height: 1.45;
+      color: rgba(255,255,255,0.88);
+      overflow-x: auto;
+    }
+    .mono { font-family: var(--mono); }
+    .callout-compact { margin-top: 10px; }
+    .kbd {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.90);
+      white-space: nowrap;
+    }
+    .hr { height: 1px; background: var(--border); margin: 14px 0; }
 
-```
-.appendix-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.25rem;
-  margin-bottom: 1.25rem;
-}
+    .backtop {
+      position: fixed; right: 16px; bottom: 16px; z-index: 1000;
+      opacity: 0; transform: translateY(8px);
+      pointer-events: none; transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .backtop.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 
-.appendix-title-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.appendix-kicker {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--color-text-muted);
-}
-
-.appendix-title {
-  font-size: 1.45rem;
-  font-weight: 600;
-  color: #111827;
-}
-
-.appendix-subtitle {
-  font-size: 0.88rem;
-  color: var(--color-text-muted);
-  max-width: 78ch;
-}
-
-.appendix-section {
-  margin-bottom: 1.2rem;
-}
-
-.appendix-section h2 {
-  font-size: 1.1rem;
-  margin-bottom: 0.4rem;
-}
-
-.appendix-section h3 {
-  font-size: 0.98rem;
-  margin-top: 0.7rem;
-  margin-bottom: 0.3rem;
-}
-
-.appendix-section p {
-  font-size: 0.9rem;
-  line-height: 1.55;
-  margin: 0 0 0.45rem;
-}
-
-.appendix-note {
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-  border-left: 3px solid var(--color-primary);
-  padding-left: 0.6rem;
-  margin-top: 0.25rem;
-  margin-bottom: 0.6rem;
-}
-
-.appendix-callout {
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  background: #f9fafb;
-  padding: 0.7rem 0.8rem;
-  margin: 0.5rem 0 0.8rem;
-  font-size: 0.88rem;
-  line-height: 1.5;
-}
-
-.appendix-callout strong {
-  color: #111827;
-}
-
-.appendix-table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  padding-bottom: 0.3rem;
-  margin-top: 0.25rem;
-  margin-bottom: 0.75rem;
-}
-
-.appendix-table {
-  width: 100%;
-  min-width: 720px;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-
-.appendix-table thead {
-  background: #f1f5f9;
-}
-
-.appendix-table th,
-.appendix-table td {
-  border: 1px solid var(--color-border);
-  padding: 0.38rem 0.55rem;
-  text-align: left;
-  vertical-align: top;
-}
-
-.appendix-table th {
-  font-weight: 600;
-  color: #111827;
-  white-space: nowrap;
-}
-
-.appendix-table tbody tr:nth-child(even) {
-  background: #f9fafb;
-}
-
-.appendix-math {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.83rem;
-  background: #0b1120;
-  color: #e5e7eb;
-  border-radius: 10px;
-  padding: 0.65rem 0.75rem;
-  margin: 0.4rem 0 0.65rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.appendix-two-column {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 0.95rem;
-  margin-top: 0.45rem;
-  margin-bottom: 0.75rem;
-  align-items: start;
-}
-
-.appendix-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.12rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  margin-bottom: 0.25rem;
-}
-
-.appendix-badge-soft {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.appendix-hr {
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 0.85rem 0;
-}
-
-.appendix-footer-note {
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-  margin-top: 0.7rem;
-  line-height: 1.55;
-}
-
-.appendix-list {
-  margin: 0.25rem 0 0.65rem 1.05rem;
-  padding: 0;
-  color: #111827;
-}
-.appendix-list li {
-  margin: 0.25rem 0;
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
-.appendix-mini {
-  font-size: 0.84rem;
-  color: var(--color-text-muted);
-  margin-top: 0.15rem;
-}
-
-@media (max-width: 900px) {
-  .appendix-two-column {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .appendix-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-```
-
+    @media (max-width: 980px){
+      .toc-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 
-<body data-theme="worldbank-light">
-  <div class="appendix-main">
-    <header class="appendix-header">
-      <div class="appendix-title-block">
-        <div class="appendix-kicker">Technical appendix (authoritative for the current build)</div>
-        <div class="appendix-title">Farming CBA Decision Aid Tool</div>
-        <div class="appendix-subtitle">
-          This appendix documents the tool’s implemented data pipeline, baseline (control) replication logic, scaling rules,
-          sensitivity grid definition, and the present value (PV) / indicator formulas used throughout the Results and Sensitivity/Simulation views.
-          All monetary figures are in AUD unless you deliberately relabel them for another currency.
+<body>
+  <header class="app-header" role="banner">
+    <div class="brand">
+      <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+        <div class="brand-mark" aria-hidden="true">CBA</div>
+        <div class="brand-text" style="min-width:0;">
+          <div class="brand-title">Farming CBA Decision Tool</div>
+          <div class="brand-subtitle">Technical appendix (methods, formulas, audit notes)</div>
         </div>
       </div>
-      <div>
-        <a href="index.html" class="btn ghost">Back to main tool</a>
+      <div class="header-actions">
+        <a class="btn small" href="index.html" aria-label="Back to main tool">Back to tool</a>
+        <button class="btn small primary" id="printBtn" type="button" aria-label="Print technical appendix">Print</button>
       </div>
-    </header>
-
-```
-<section class="card appendix-section">
-  <h2>1. Scope and reading guide</h2>
-  <p>
-    This page is intended to be the “single source of truth” for how the tool calculates economic indicators from an imported dataset.
-    It is written for technical readers (reviewers, analysts, auditors) but aims to remain readable for non-technical users.
-  </p>
-  <div class="appendix-callout">
-    <strong>What you will find here</strong>
-    <div class="appendix-mini">The key elements requested for replication and auditing are in Sections 3–7.</div>
-    <ul class="appendix-list">
-      <li><strong>PV formulas and indicator definitions</strong> (Section 5)</li>
-      <li><strong>Recurrence definitions</strong> for cash-flow construction and discounting (Section 5)</li>
-      <li><strong>Replicate baseline (control) logic</strong> and derived “delta” variables (Section 3)</li>
-      <li><strong>Scaling rule</strong> for amendment input costs and project scaling (Sections 3 and 4)</li>
-      <li><strong>Sensitivity grid definition</strong> (Section 6)</li>
-      <li><strong>Adaptation guide</strong> for new datasets (Section 7)</li>
-    </ul>
-  </div>
-  <p class="appendix-note">
-    If the tool is updated, this appendix must be updated in lockstep. In practice, the easiest audit is: export the scenario (JSON) and
-    compare the computed intermediate series (benefits, costs, discount factors) with the definitions below.
-  </p>
-</section>
-
-<section class="card appendix-section">
-  <h2>2. Data ingestion, parsing, and validation (implemented behaviour)</h2>
-
-  <h3>2.1 Input formats</h3>
-  <p>
-    The tool accepts trial data in two equivalent ways: (i) upload (spreadsheet workflow) and (ii) paste (tab-delimited text).
-    Both routes feed the same parser/validator so the resulting model state is identical for a given dataset.
-  </p>
-
-  <h3>2.2 Missing-value handling</h3>
-  <p>
-    The parser treats the literal character <span class="appendix-badge appendix-badge-soft">?</span> as missing, the same as an empty cell.
-    Missing values are excluded from numerical aggregations (means, sums) and are never silently coerced to zero.
-  </p>
-  <!-- :contentReference[oaicite:0]{index=0} -->
-
-  <h3>2.3 Units conventions</h3>
-  <p>
-    The dataset is expected to provide agronomic outcomes (for example, yield) and cost components in consistent units. In the faba beans trial,
-    the tool works on a per-hectare basis because both <span class="appendix-badge appendix-badge-soft">yield_t_ha</span> and cost columns are in per-ha terms.
-    Plot dimensions can exist as metadata but do not change calculations when outcomes are already standardised per hectare.
-  </p>
-</section>
-
-<section class="card appendix-section">
-  <h2>3. Derived variables, replicate baseline logic, and the amendment-cost scaling rule</h2>
-
-  <h3>3.1 Control flag (baseline identification)</h3>
-  <p>
-    The tool identifies the baseline (control) observation(s) using an explicit derived indicator <span class="appendix-badge appendix-badge-soft">is_control</span>.
-    In the faba beans trial dataset, a row is treated as control if either (a) the treatment name is literally “Control”, or (b) the numeric treatment ID equals 1.
-  </p>
-  <div class="appendix-math">
-```
-
-is_control = (amendment_name == "Control") OR (treatment_id == 1) </div> <!-- :contentReference[oaicite:1]{index=1} -->
-
-```
-  <h3>3.2 Amendment input cost scaling (critical unit correction)</h3>
-  <p>
-    The faba beans trial includes an amendment input cost column <span class="appendix-badge appendix-badge-soft">cost_amendment_input_per_ha_raw</span>.
-    In the source workbook, some entries are stored at a scale that is 100× too large. The tool corrects this deterministically:
-    if the raw value exceeds 1000 (AUD/ha), the value is divided by 100; otherwise it is used unchanged.
-  </p>
-  <div class="appendix-math">
-```
-
-cost_amendment_input_per_ha =
-if cost_amendment_input_per_ha_raw is missing: missing
-else if cost_amendment_input_per_ha_raw > 1000: cost_amendment_input_per_ha_raw / 100
-else: cost_amendment_input_per_ha_raw </div> <!-- :contentReference[oaicite:2]{index=2} -->
-
-```
-  <h3>3.3 Total cost after amendment scaling</h3>
-  <p>
-    The dataset includes <span class="appendix-badge appendix-badge-soft">total_cost_per_ha_raw</span>, which is the raw sum of included cost components.
-    After applying the amendment scaling rule above, the tool constructs a corrected total cost:
-  </p>
-  <div class="appendix-math">
-```
-
-total_cost_per_ha =
-total_cost_per_ha_raw
-
-* cost_amendment_input_per_ha_raw
-
-- cost_amendment_input_per_ha
-
     </div>
-    <p class="appendix-note">
-      This definition preserves all other cost components while replacing only the amendment input cost with its scaled version.
-      If the amendment raw value is missing, the correction term is treated consistently as missing (i.e., the tool does not invent a replacement).
-    </p>
-    <!-- :contentReference[oaicite:3]{index=3} -->
+  </header>
 
-    <h3>3.4 Replicate baseline (“replicate control mean”) logic</h3>
-    <p>
-      The tool supports replicated trial designs by constructing baseline (control) values within each replicate. Two replicate-baseline series are created:
-      <span class="appendix-badge appendix-badge-soft">control_yield_t_ha</span> and <span class="appendix-badge appendix-badge-soft">control_total_cost_per_ha</span>.
-      For every replicate <span class="appendix-badge appendix-badge-soft">replicate_id</span>, the tool takes the mean of the control rows in that replicate and assigns it to all rows in that replicate.
-    </p>
-    <div class="appendix-math">
+  <main class="appendix-shell" id="content" role="main">
+    <section class="card appendix-hero" aria-labelledby="t-title">
+      <div class="kicker">Technical appendix</div>
+      <h1 id="t-title">Methods, formulas, scaling rules, replicate baselines, and sensitivity grid</h1>
+      <p class="sub">
+        This appendix documents the exact accounting logic used by the tool. The main tool is written for practical use and avoids technical terminology where possible. Definitions, formulas, and implementation details are recorded here for review, replication, and audit.
+      </p>
 
-For each replicate g:
+      <div class="callout callout-compact">
+        <div class="badge warn">Important</div>
+        <p class="small muted" style="margin-top:8px;">
+          Monetary units are whatever currency you input (often AUD). The engine treats all monetary fields consistently and never mixes currencies. Missing values are treated as missing and excluded from means and totals (never forced to zero). The character <span class="kbd">?</span> is treated as missing.
+        </p>
+      </div>
 
-control_yield_t_ha[g] =
-mean( yield_t_ha for rows where replicate_id == g and is_control == true )
+      <div class="toc" aria-label="Table of contents">
+        <div class="small muted" style="font-weight:800; letter-spacing:-0.01em;">Contents</div>
+        <div class="toc-grid">
+          <a href="#sec-1"><span class="label">1. Data model</span><span class="hint">records, units, missingness</span></a>
+          <a href="#sec-2"><span class="label">2. Replicate baselines</span><span class="hint">control within replicate</span></a>
+          <a href="#sec-3"><span class="label">3. Plot deltas</span><span class="hint">treatment minus baseline</span></a>
+          <a href="#sec-4"><span class="label">4. Scaling rule</span><span class="hint">per-ha to farm totals</span></a>
+          <a href="#sec-5"><span class="label">5. Discounted CBA</span><span class="hint">PV, NPV, BCR, ROI</span></a>
+          <a href="#sec-6"><span class="label">6. Recurrence and persistence</span><span class="hint">cost cadence and benefit duration</span></a>
+          <a href="#sec-7"><span class="label">7. Sensitivity grid</span><span class="hint">price × r × persistence × recurrence</span></a>
+          <a href="#sec-8"><span class="label">8. Rankings and reporting</span><span class="hint">comparison-to-control table</span></a>
+          <a href="#sec-9"><span class="label">9. Reproducibility</span><span class="hint">exports, scenario JSON</span></a>
+        </div>
+      </div>
+    </section>
 
-control_total_cost_per_ha[g] =
-mean( total_cost_per_ha for rows where replicate_id == g and is_control == true )
+    <section id="sec-1" class="card">
+      <div class="card-head">
+        <h2>1. Data model (records, units, and missing values)</h2>
+      </div>
 
-For any row i with replicate_id == g:
-control_yield_t_ha[i] = control_yield_t_ha[g]
-control_total_cost_per_ha[i] = control_total_cost_per_ha[g] </div> <!-- :contentReference[oaicite:4]{index=4} -->
+      <div class="prose">
+        <p>
+          The tool ingests trial-style data at the <span class="mono">plot</span> level and produces treatment summaries compared against a designated control. The minimum conceptual structure is:
+          (i) a plot identifier, (ii) a replicate identifier, (iii) a treatment identifier or name, (iv) a control flag, (v) plot area, and (vi) one or more numeric outcome and cost fields used to calculate deltas relative to control.
+        </p>
 
-```
-  <h3>3.5 Replicate-delta construction (treatment effect vs baseline)</h3>
-  <p>
-    The tool then computes replicate-specific treatment effects (deltas) as differences from the replicate control mean:
-    <span class="appendix-badge appendix-badge-soft">delta_yield_t_ha</span> and <span class="appendix-badge appendix-badge-soft">delta_cost_per_ha</span>.
-  </p>
-  <div class="appendix-math">
-```
+        <p>
+          The engine supports import from TSV or CSV (upload or paste). Parsing is delimiter-aware and attempts to identify a data dictionary section when present. Validation checks include required columns, numeric coercion, and missingness rates. Missing values are represented as empty strings, <span class="kbd">NA</span>, <span class="kbd">NaN</span>, or <span class="kbd">?</span>, and are treated as missing (excluded from means and totals rather than set to zero).
+        </p>
 
-delta_yield_t_ha = yield_t_ha - control_yield_t_ha
-delta_cost_per_ha = total_cost_per_ha - control_total_cost_per_ha </div> <p class="appendix-note">
-By construction, for control rows within each replicate, both deltas are (approximately) zero (subject only to rounding).
-This is the tool’s baseline replication principle: every treatment is measured relative to the control observed in the same replicate. </p> <!-- :contentReference[oaicite:5]{index=5} -->
+        <div class="hr"></div>
 
-```
-  <hr class="appendix-hr" />
+        <p class="small muted">
+          Notation used in later sections: plots are indexed by <span class="mono">i</span>, replicates by <span class="mono">r</span>, treatments by <span class="mono">k</span>, and years by <span class="mono">t</span>. The analysis horizon is <span class="mono">T</span> years, with <span class="mono">t = 0</span> denoting the present (year 0).
+        </p>
+      </div>
+    </section>
 
-  <h3>3.6 Summary table of key derived fields</h3>
-  <div class="appendix-table-wrapper">
-    <table class="appendix-table">
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Meaning</th>
-          <th>How it is constructed</th>
-          <th>Why it exists</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>is_control</code></td>
-          <td>Control flag</td>
-          <td><code>(amendment_name == "Control") OR (treatment_id == 1)</code></td>
-          <td>Defines the baseline for replicate comparisons</td>
-        </tr>
-        <tr>
-          <td><code>cost_amendment_input_per_ha</code></td>
-          <td>Scaled amendment input cost</td>
-          <td>Divide raw by 100 when raw &gt; 1000</td>
-          <td>Fixes unit scale inconsistencies in the source workbook</td>
-        </tr>
-        <tr>
-          <td><code>total_cost_per_ha</code></td>
-          <td>Corrected total cost per ha</td>
-          <td><code>raw_total - raw_amendment + scaled_amendment</code></td>
-          <td>Ensures total cost aligns with corrected amendment costs</td>
-        </tr>
-        <tr>
-          <td><code>control_yield_t_ha</code></td>
-          <td>Replicate control mean yield</td>
-          <td>Mean control yield within replicate</td>
-          <td>Replicate-consistent baseline for yield deltas</td>
-        </tr>
-        <tr>
-          <td><code>control_total_cost_per_ha</code></td>
-          <td>Replicate control mean cost</td>
-          <td>Mean control cost within replicate (scaled)</td>
-          <td>Replicate-consistent baseline for cost deltas</td>
-        </tr>
-        <tr>
-          <td><code>delta_yield_t_ha</code></td>
-          <td>Yield effect vs replicate control</td>
-          <td><code>yield - control_yield</code></td>
-          <td>Directly feeds the incremental benefit calculation</td>
-        </tr>
-        <tr>
-          <td><code>delta_cost_per_ha</code></td>
-          <td>Cost effect vs replicate control</td>
-          <td><code>cost - control_cost</code></td>
-          <td>Directly feeds the incremental cost calculation</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <!-- :contentReference[oaicite:6]{index=6} -->
-</section>
+    <section id="sec-2" class="card">
+      <div class="card-head">
+        <h2>2. Replicate-specific control baselines</h2>
+      </div>
 
-<section class="card appendix-section">
-  <h2>4. Treatment-level aggregation and project scaling</h2>
+      <div class="prose">
+        <p>
+          Trial plots are typically blocked into replicates to control for spatial heterogeneity. The tool therefore defines the control baseline <em>within each replicate</em>, rather than using a single global control average. This prevents treatment effects from being confounded by replicate-to-replicate differences.
+        </p>
 
-  <h3>4.1 From plot rows to treatment-level effects</h3>
-  <p>
-    The imported dataset contains multiple rows per treatment (across plots and replicates). For the Results view, the tool aggregates these rows
-    into a single treatment-level effect using the derived replicate deltas.
-  </p>
-  <div class="appendix-math">
-```
+        <p>
+          For each replicate <span class="mono">r</span>, and for each outcome variable <span class="mono">Y</span> used to compute benefits (for example yield per hectare), the replicate control baseline is the missing-safe mean across control plots in that replicate:
+        </p>
 
-For a treatment k:
+        <div class="math" aria-label="Replicate control baseline formula">
+Let C(r) be the set of plots in replicate r flagged as control.
+Let Y_i be the outcome value for plot i (missing values excluded).
 
-ΔYield_k (t/ha) = mean( delta_yield_t_ha over rows with treatment_name == k, excluding missing )
-ΔCost_k  (AUD/ha) = mean( delta_cost_per_ha over rows with treatment_name == k, excluding missing ) </div> <p class="appendix-note">
-Because effects are defined as replicate-relative deltas, this aggregation respects the replicated design: each observation is already “net of”
-its within-replicate control baseline before averaging. </p>
+Baseline control outcome within replicate r:
+  Ȳ_control,r = mean{ Y_i : i ∈ C(r), Y_i is observed }
 
-```
-  <h3>4.2 Mapping agronomic effects into monetary flows</h3>
-  <p>
-    The tool converts the yield effect into an annual monetary benefit per hectare using a user-specified grain price.
-    (If you change the default price, the benefit stream updates mechanically.)
-  </p>
-  <div class="appendix-math">
-```
+If a replicate has no usable control observations for Y, the replicate baseline for that outcome is treated as missing and is flagged in Data Checks.
+        </div>
 
-Let P be grain price (AUD per tonne).
+        <p>
+          The same logic applies to cost fields when the analysis uses plot-level costs. If costs are specified at the treatment level rather than plot level, replicate baselines apply primarily to outcomes that drive benefits (yield, quality measures, or other output differences).
+        </p>
+      </div>
+    </section>
 
-Gross incremental benefit per hectare (AUD/ha/year):
-BenefitPerHa_k = ΔYield_k * P </div> <p>
-If the yield effect is negative, the benefit becomes a negative contribution (a disbenefit). The tool does not clip or censor it. </p>
+    <section id="sec-3" class="card">
+      <div class="card-head">
+        <h2>3. Plot-level deltas and treatment summaries</h2>
+      </div>
 
-```
-  <h3>4.3 Risk adjustment (benefits-only)</h3>
-  <p>
-    Risk is implemented as a multiplicative reduction applied to benefits (not to costs). Let Risk ∈ [0, 1] denote the fraction of benefits at risk.
-    The effective annual benefit is:
-  </p>
-  <div class="appendix-math">
-```
+      <div class="prose">
+        <p>
+          Once replicate control baselines are defined, the tool computes a replicate-adjusted delta for each plot. For a plot <span class="mono">i</span> in replicate <span class="mono">r(i)</span>, the delta for an outcome <span class="mono">Y</span> is:
+        </p>
 
-EffectiveBenefitPerHa_k = BenefitPerHa_k * (1 - Risk) </div> <p class="appendix-note">
-This “benefits-only” risk adjustment is consistent with the tool’s decision-support framing: costs are paid as incurred, while benefits may under-deliver.
-Use the sensitivity grid (Section 6) to see how results shift under low/base/high risk assumptions. </p>
+        <div class="math" aria-label="Plot delta formula">
+Delta for plot i (outcome Y):
+  ΔY_i = Y_i − Ȳ_control,r(i)
 
-```
-  <h3>4.4 Adoption and target-area scaling</h3>
-  <p>
-    The tool scales per-hectare annual flows to project totals using: (i) a target area A (hectares), and (ii) an adoption share trajectory a<sub>t</sub>.
-    Adoption scenarios are defined by low/base/high peak adoption multipliers; the tool converts these into an adoption path over time.
-  </p>
-  <div class="appendix-math">
-```
+This is only computed when both Y_i and Ȳ_control,r(i) are observed.
+        </div>
 
+        <p>
+          Treatment-level effects are then summarised from plot deltas. For each treatment <span class="mono">k</span> and outcome <span class="mono">Y</span>, the tool computes a missing-safe mean delta:
+        </p>
+
+        <div class="math" aria-label="Treatment mean delta formula">
+Let P(k) be the set of plots assigned to treatment k.
+Let ΔY_i be defined as above (missing excluded).
+
+Mean treatment delta:
+  ΔȲ_k = mean{ ΔY_i : i ∈ P(k), ΔY_i is observed }
+        </div>
+
+        <p>
+          The same structure applies to plot-level cost variables where applicable. The tool also records counts of usable observations by treatment and replicate, and flags situations where outcomes are observed but replicate control baselines are not (for example missing control data in a replicate).
+        </p>
+      </div>
+    </section>
+
+    <section id="sec-4" class="card">
+      <div class="card-head">
+        <h2>4. Scaling rule (from plot deltas to farm-level annual flows)</h2>
+      </div>
+
+      <div class="prose">
+        <p>
+          The tool is control-centric: all benefits and incremental costs are defined relative to the control. The scaling rule converts replicate-adjusted treatment deltas into annual monetary flows for a chosen analysis area.
+        </p>
+
+        <p>
+          The engine uses a per-hectare normalisation before scaling up. If an outcome is measured per hectare (for example <span class="mono">t/ha</span>), the delta is already per hectare. If an outcome is recorded per plot, it is converted to per hectare using plot area before scaling.
+        </p>
+
+        <div class="math" aria-label="Per hectare normalisation and scaling rule">
+Per-hectare delta (generic):
+  If Y is per hectare already:   Δy_k = ΔȲ_k
+  If Y is per plot total:        Δy_k = ΔȲ_k / mean_plot_area_k   (using non-missing plot areas)
+
+Farm/analysis area:
+  A = target area in hectares (entered in the tool)
+
+Adoption multiplier (scenario):
+  a ∈ [0, 1] (scenario setting; can differ by scenario and by sensitivity run)
+
+Adopted area:
+  A_adopted = A × a
+
+Monetised annual benefit flow for treatment k:
+  Benefit_k,annual = (Δy_k × price_per_unit) × A_adopted
+
+Incremental annual variable cost flow for treatment k:
+  VarCost_k,annual = (Δc_k,per_ha) × A_adopted
+
+Incremental fixed cost for treatment k (if specified as fixed, not per hectare):
+  FixCost_k,annual = fixed_amount_k  (not multiplied by A)
+        </div>
+
+        <p>
+          The tool’s “cost scaling rule” is therefore: per-hectare incremental costs scale with adopted area; fixed costs do not. If the imported data express a cost as a plot total, the engine first converts it to per hectare using plot area (in the same way as outcomes) and then scales by adopted area.
+        </p>
+
+        <div class="callout">
+          <div class="badge">Control column</div>
+          <p class="small muted" style="margin-top:8px;">
+            In the Results tab comparison table, the control is shown as the baseline. Incremental benefits and costs for each treatment are computed relative to the control, so the control’s incremental values are zero by construction. Total (non-incremental) reporting can be exported, but the ranking logic uses incremental outcomes relative to control.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-5" class="card">
+      <div class="card-head">
+        <h2>5. Discounted cost–benefit analysis (PV formulas and indicators)</h2>
+      </div>
+
+      <div class="prose">
+        <p>
+          The engine constructs annual incremental flows for each treatment <span class="mono">k</span>: benefits <span class="mono">B_k(t)</span> and costs <span class="mono">C_k(t)</span> for years <span class="mono">t = 0, 1, …, T</span>. Discounting uses a constant annual discount rate <span class="mono">r</span> for a given run.
+        </p>
+
+        <p>
+          Discount factor: <span class="mono">DF(t) = 1 / (1 + r)^t</span>. Year 0 uses <span class="mono">DF(0)=1</span>, so year-0 (capital) costs are not discounted.
+        </p>
+
+        <div class="math" aria-label="Present value formulas">
+Present value of benefits:
+  PV_B(k) = Σ_{t=0..T}  B_k(t) / (1 + r)^t
+
+Present value of costs:
+  PV_C(k) = Σ_{t=0..T}  C_k(t) / (1 + r)^t
+
+Net present value:
+  NPV(k) = PV_B(k) − PV_C(k)
+
+Benefit–cost ratio:
+  BCR(k) = PV_B(k) / PV_C(k)    (defined when PV_C(k) > 0)
+
+Return on investment:
+  ROI(k) = NPV(k) / PV_C(k)     (defined when PV_C(k) > 0)
+        </div>
+
+        <p>
+          All indicators are computed on the same incremental basis (relative to the control). The comparison-to-control table reports <span class="mono">PV_B</span>, <span class="mono">PV_C</span>, <span class="mono">NPV</span>, <span class="mono">BCR</span>, and <span class="mono">ROI</span>, and additionally reports deltas versus control where meaningful (for example <span class="mono">ΔNPV</span> and <span class="mono">ΔPV_C</span>, both absolute and percentage where the denominator is non-zero).
+        </p>
+      </div>
+    </section>
+
+    <section id="sec-6" class="card">
+      <div class="card-head">
+        <h2>6. Recurrence and persistence (per-treatment settings)</h2>
+      </div>
+
+      <div class="prose">
+        <p>
+          The tool supports treatment-specific recurrence for incremental costs and treatment-specific persistence for incremental benefits. These settings are configured in the Configuration tab and are applied in both the base run and the sensitivity grid.
+        </p>
+
+        <div class="math" aria-label="Recurrence and persistence definitions">
+Cost recurrence for treatment k:
+  - Once (year 0):         incremental costs applied at t = 0 only
+  - Annual:                incremental costs applied for each year t = 1..T (or t = 0..T if specified)
+  - Every m years:         incremental costs applied at t = 0, m, 2m, ... ≤ T
+
+Benefit persistence for treatment k:
+  - Benefits apply through year P (persistence horizon), then drop to 0 afterwards:
+      B_k(t) = B_k,annual for t = 1..P
+      B_k(t) = 0          for t = P+1..T
+
+If persistence P ≥ T, benefits persist for the full analysis horizon.
+        </div>
+
+        <p>
+          When both persistence and recurrence are set, the engine constructs <span class="mono">B_k(t)</span> and <span class="mono">C_k(t)</span> accordingly and then applies the discounting formulas in Section 5. In the sensitivity grid, persistence can be varied independently from discount rate and price.
+        </p>
+      </div>
+    </section>
+
+    <section id="sec-7" class="card">
+      <div class="card-head">
+        <h2>7. Sensitivity grid (price × discount rate × persistence × recurrence)</h2>
+      </div>
+
+      <div class="prose">
+        <p>
+          The sensitivity grid is a deterministic sweep across user-defined sets of assumptions. For each treatment, the tool recalculates all indicators under each combination of:
+          (i) price multiplier, (ii) discount rate, (iii) benefit persistence, and (iv) cost recurrence.
+        </p>
+
+        <div class="math" aria-label="Sensitivity grid definition">
 Let:
-A = target area (ha)
-a_t = adoption share in year t (0 to 1)
-T = number of analysis years
-t = 1..T denotes annual operating years
-(t=0 is reserved for up-front items, if any)
+  M_price = {m1, m2, ...}   (price multipliers, e.g., 0.8, 1.0, 1.2)
+  R       = {r1, r2, ...}   (discount rates, e.g., 0.04, 0.07, 0.10)
+  P       = {p1, p2, ...}   (persistence horizons in years, e.g., 1, 3, 5, 10)
+  G_k     = {g1, g2, ...}   (recurrence options for treatment k, e.g., once, annual, every 2 years)
 
-AdoptedArea_t = A * a_t
+For each treatment k and each tuple (m, r, p, g):
+  - Replace price_per_unit with (m × price_per_unit)
+  - Construct B_k(t) using persistence p
+  - Construct C_k(t) using recurrence g
+  - Compute PV_B(k), PV_C(k), NPV(k), BCR(k), ROI(k) using rate r
 
-Annual benefit (AUD) in year t for treatment k:
-B_{k,t} = EffectiveBenefitPerHa_k * AdoptedArea_t
+The grid outputs one row per (treatment, m, r, p, g) combination.
+        </div>
 
-Annual cost (AUD) in year t for treatment k:
-C_{k,t} = ΔCost_k * AdoptedArea_t </div> <p class="appendix-note">
-The adoption path a<sub>t</sub> is deterministic for a given scenario (low/base/high). If you need to audit the exact path used in your run,
-export the scenario state (JSON) and compare year-by-year adopted area. </p> </section>
+        <p>
+          The sensitivity export includes the full grid (so results can be filtered and graphed outside the tool) and preserves the exact parameter combination used for each row.
+        </p>
 
-```
-<section class="card appendix-section">
-  <h2>5. Present value (PV) formulas, recurrences, and reported indicators</h2>
+        <div class="callout">
+          <div class="badge warn">Interpretation note</div>
+          <p class="small muted" style="margin-top:8px;">
+            Price multipliers affect benefits (revenue-linked outputs). They do not change costs unless a cost item is explicitly tied to price in the imported data. Discount rate changes the weight placed on later years. Persistence changes how long benefits last. Recurrence changes how often costs recur.
+          </p>
+        </div>
+      </div>
+    </section>
 
-  <h3>5.1 Discount factors and PV recurrences</h3>
-  <p>
-    Let r be the annual discount rate for the scenario. The tool uses standard discrete-time discounting:
-  </p>
-  <div class="appendix-math">
-```
+    <section id="sec-8" class="card">
+      <div class="card-head">
+        <h2>8. Rankings, comparison-to-control table, and deltas</h2>
+      </div>
 
-DiscountFactor(t, r) = 1 / (1 + r)^t
+      <div class="prose">
+        <p>
+          The Results tab uses a single comparison-to-control table as the default view. Rows are indicators and columns are Control plus each treatment. For each treatment, the table also reports deltas versus control:
+          absolute deltas and, where meaningful, percentage deltas (with denominators checked to avoid division by zero).
+        </p>
 
-PVBenefits_k = Σ_{t=1..T} [ B_{k,t} * DiscountFactor(t, r) ]
-PVCosts_k    = Σ_{t=1..T} [ C_{k,t} * DiscountFactor(t, r) ]
+        <p>
+          Ranking is computed from the chosen primary metric (typically NPV under the base scenario). If two treatments tie within rounding, the tool breaks ties using a secondary metric (for example PV benefits) to produce a stable ordering.
+        </p>
 
-(If any up-front cost exists for the scenario, it is treated as year-0 and added without discounting:
-PVCosts_k = UpfrontCost_k + Σ_{t=1..T} [ C_{k,t} / (1+r)^t ] ) </div>
+        <div class="math" aria-label="Delta and percent-delta conventions">
+Absolute delta vs control (indicator X):
+  ΔX_k = X_k − X_control
 
-```
-  <p>
-    The same definitions can be written as recurrences (useful for replication in spreadsheets):
-  </p>
-  <div class="appendix-math">
-```
+Percent delta vs control (indicator X), when X_control ≠ 0:
+  %ΔX_k = 100 × (X_k − X_control) / |X_control|
 
-PVBenefits_k(0) = 0
-PVCosts_k(0) = UpfrontCost_k (often 0 in per-ha incremental trial mode)
+If the denominator is zero or missing, the percent delta is not reported (left blank) and is flagged in Data Checks when relevant.
+        </div>
+      </div>
+    </section>
 
-For t = 1..T:
-PVBenefits_k(t) = PVBenefits_k(t-1) + B_{k,t} / (1 + r)^t
-PVCosts_k(t)    = PVCosts_k(t-1)    + C_{k,t} / (1 + r)^t
+    <section id="sec-9" class="card">
+      <div class="card-head">
+        <h2>9. Reproducibility, exports, and audit notes</h2>
+      </div>
 
-Final:
-PVBenefits_k = PVBenefits_k(T)
-PVCosts_k    = PVCosts_k(T) </div>
+      <div class="prose">
+        <p>
+          The tool supports exports designed for replication and review:
+          cleaned dataset export (TSV), treatment summary export (CSV), sensitivity grid export (CSV), and scenario JSON save/load to preserve configuration settings (including per-treatment recurrence and persistence).
+        </p>
 
-```
-  <h3>5.2 Core indicators</h3>
-  <div class="appendix-two-column">
-    <div>
-      <span class="appendix-badge">Net present value (NPV)</span>
-      <p>
-        NPV is the present value of incremental benefits minus the present value of incremental costs.
-        In a control-centric configuration, the control column has (approximately) zero values and each treatment is interpreted as a change relative to control.
-      </p>
-    </div>
-    <div>
-      <div class="appendix-math">
-```
+        <p>
+          A scenario JSON is a complete snapshot of (i) the cleaned dataset (or a pointer to it, depending on settings), (ii) project settings, (iii) discount rate and horizon, (iv) price assumptions, and (v) recurrence and persistence settings. Re-loading the scenario reproduces the same base results, subject only to deterministic calculations (no Monte Carlo elements are included unless explicitly exported).
+        </p>
 
-NPV_k = PVBenefits_k - PVCosts_k </div> </div> </div>
+        <div class="callout">
+          <div class="badge">Audit checklist</div>
+          <div class="kv" style="margin-top:10px;">
+            <div class="k">Missing values</div><div>Never imputed to zero; excluded from means/totals; “?” treated as missing.</div>
+            <div class="k">Baselines</div><div>Computed within replicate using control plots only (missing-safe).</div>
+            <div class="k">Deltas</div><div>Plot deltas are replicate-adjusted; treatment effects summarised from deltas.</div>
+            <div class="k">Scaling</div><div>Per-hectare normalisation; per-ha values scale with adopted area; fixed costs do not.</div>
+            <div class="k">Discounting</div><div>PV uses Σ CF(t)/(1+r)^t with year 0 undiscounted.</div>
+            <div class="k">Sensitivity grid</div><div>Full Cartesian product across price multipliers, discount rates, persistence, and recurrence.</div>
+          </div>
+        </div>
 
-```
-  <div class="appendix-two-column">
-    <div>
-      <span class="appendix-badge">Benefit–cost ratio (BCR)</span>
-      <p>
-        BCR is the ratio of PV benefits to PV costs. It is undefined when PV costs are zero. The tool reports BCR only when the denominator is positive.
-      </p>
-    </div>
-    <div>
-      <div class="appendix-math">
-```
+        <p class="small muted" style="margin-top:12px;">
+          If you are archiving results, store (a) the scenario JSON, (b) the cleaned dataset TSV, and (c) the sensitivity grid CSV alongside any narrative report. This preserves both the inputs and the model configuration used to generate the outputs.
+        </p>
+      </div>
+    </section>
+  </main>
 
-BCR_k = PVBenefits_k / PVCosts_k </div> </div> </div>
-
-```
-  <div class="appendix-two-column">
-    <div>
-      <span class="appendix-badge">Return on investment (ROI)</span>
-      <p>
-        ROI expresses net value created per dollar of PV cost. It is undefined when PV costs are zero. When reported as a percentage, multiply by 100.
-      </p>
-    </div>
-    <div>
-      <div class="appendix-math">
-```
-
-ROI_k = NPV_k / PVCosts_k
-ROI%_k = 100 * ROI_k </div> </div> </div>
-
-```
-  <div class="appendix-two-column">
-    <div>
-      <span class="appendix-badge">Δ vs control columns (absolute and percent)</span>
-      <p>
-        In the “Comparison to Control” presentation, each treatment includes explicit deltas against the control.
-        Because the base computation is already control-relative for incremental streams, the displayed Δ values are:
-        (i) the level itself when control is zero, and (ii) a percent change computed only when the control denominator is non-zero.
-      </p>
-    </div>
-    <div>
-      <div class="appendix-math">
-```
-
-ΔX_k = X_k - X_control
-
-%ΔX_k =
-if X_control == 0: not reported (or shown as "—")
-else: 100 * (X_k - X_control) / |X_control| </div> </div> </div>
-
-```
-  <h3>5.3 Ranking definition</h3>
-  <p>
-    The default ranking used in the Results view is defined as an ordering of treatments by economic performance, with ties handled deterministically.
-    Where multiple leaderboards exist (for example, “Top 5 by NPV” vs “Top 5 by BCR”), each is ranked by the chosen metric in descending order.
-  </p>
-  <div class="appendix-math">
-```
-
-RankByNPV: sort treatments by NPV_k (descending), then by name (ascending) as a stable tie-break.
-RankByBCR: sort treatments by BCR_k (descending), then by name (ascending) as a stable tie-break. </div>
-
-```
-  <p class="appendix-note">
-    If you need a different tie-break rule (for example, PV costs as secondary), implement it consistently across the leaderboard and the comparison table export.
-  </p>
-</section>
-
-<section class="card appendix-section">
-  <h2>6. Sensitivity grid definition (low/base/high scenarios)</h2>
-
-  <h3>6.1 Parameter sets</h3>
-  <p>
-    The sensitivity grid is defined as the Cartesian product of low/base/high settings for: discount rate, adoption, and risk.
-    Each grid cell is a complete scenario run (i.e., it rebuilds annual flows and recomputes PV and indicators).
-  </p>
-  <div class="appendix-math">
-
-
-Let:
-r ∈ { r_low, r_base, r_high }
-a ∈ { a_low, a_base, a_high }  (peak adoption scenario)
-Risk ∈ { Risk_low, Risk_base, Risk_high }
-
-Sensitivity grid S = { (r, a, Risk) : r in R, a in A, Risk in K }
-
-Number of cells = 3 * 3 * 3 = 27 </div>
-
-
-  <h3>6.2 How the grid maps into annual adoption shares</h3>
-  <p>
-    Each adoption scenario sets a peak adoption multiplier (low/base/high). The tool converts that peak level into a year-by-year adoption path a<sub>t</sub>
-    using its built-in adoption-path rule (ramp/plateau behaviour). The same path rule is applied across all grid cells; only the peak adoption level changes.
-  </p>
-  <div class="appendix-math">
-
-
-For each grid cell s = (r, a_peak, Risk):
-
-Construct adoption path a_t(s) using the tool's adoption rule:
-a_t(s) = f(t; a_peak, adoption_rule_parameters)
-
-Then:
-AdoptedArea_t(s) = A * a_t(s)
-B_{k,t}(s) = (ΔYield_k * P) * (1 - Risk) * AdoptedArea_t(s)
-C_{k,t}(s) = (ΔCost_k) * AdoptedArea_t(s)
-
-Compute PVBenefits_k(s), PVCosts_k(s), NPV_k(s), BCR_k(s), ROI_k(s). </div>
-
-
-  <div class="appendix-callout">
-    <strong>Interpretation</strong>
-    <p>
-      The sensitivity grid answers: “How robust are conclusions to plausible low/base/high settings for time preference (r), uptake (adoption),
-      and benefit under-delivery (risk)?” It is not a Monte Carlo simulation; it is a structured scenario table intended for quick comparison and reporting.
-    </p>
-  </div>
-</section>
-
-<section class="card appendix-section">
-  <h2>7. Adaptation guide for future datasets (how to extend without breaking logic)</h2>
-
-  <h3>7.1 Minimum required columns</h3>
-  <p>
-    To use the tool’s implemented logic without modification, a new dataset should provide at minimum:
-  </p>
-  <div class="appendix-table-wrapper">
-    <table class="appendix-table">
-      <thead>
-        <tr>
-          <th>Concept</th>
-          <th>Required field(s)</th>
-          <th>Notes</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Treatment identifier</td>
-          <td><code>treatment_id</code> and/or <code>treatment_name</code></td>
-          <td>Must uniquely identify treatments used in Results columns.</td>
-        </tr>
-        <tr>
-          <td>Replicate identifier</td>
-          <td><code>replicate_id</code></td>
-          <td>Required if you want replicate-specific baseline control means. If no replication exists, set all rows to a single replicate.</td>
-        </tr>
-        <tr>
-          <td>Control identification</td>
-          <td><code>is_control</code> or a rule to derive it</td>
-          <td>For the faba dataset, control is derived via name == “Control” or id == 1. For new datasets, prefer an explicit boolean column.</td>
-        </tr>
-        <tr>
-          <td>Primary outcome effect</td>
-          <td><code>yield_t_ha</code> (or analogous outcome in per-unit terms)</td>
-          <td>If your outcome is not yield, rename consistently and update the mapping from outcome effect to benefit value.</td>
-        </tr>
-        <tr>
-          <td>Cost basis</td>
-          <td><code>total_cost_per_ha_raw</code> (or analogous total cost)</td>
-          <td>Costs should align with the period interpreted as “annual operating cost” unless you explicitly separate up-front items.</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="backtop" id="backTopWrap">
+    <button class="btn primary" id="backToTop" type="button" aria-label="Back to top">Back to top</button>
   </div>
 
-  <h3>7.2 If your dataset has unit scale problems</h3>
-  <p>
-    The faba beans trial required a specific correction: divide amendment input costs by 100 if raw &gt; 1000.
-    For new datasets, do not assume this rule applies. Instead:
-  </p>
-  <ul class="appendix-list">
-    <li>Choose a deterministic threshold-based rule only if you can justify it from data provenance (for example, cents vs dollars).</li>
-    <li>Document the rule in the dataset dictionary and mirror it here.</li>
-    <li>Prefer fixing the source workbook (or generating a cleaned extract) so the tool does not need ad hoc corrections.</li>
-  </ul>
+  <script>
+    (function () {
+      const printBtn = document.getElementById("printBtn");
+      if (printBtn) printBtn.addEventListener("click", () => window.print());
 
-  <h3>7.3 If you have multiple outcomes (not just yield)</h3>
-  <p>
-    The implemented benefit mapping in this appendix uses yield and a single commodity price. For a multi-output system:
-  </p>
-  <div class="appendix-math">
+      const wrap = document.getElementById("backTopWrap");
+      const btn = document.getElementById("backToTop");
 
+      const onScroll = () => {
+        const y = window.scrollY || document.documentElement.scrollTop || 0;
+        if (wrap) wrap.classList.toggle("show", y > 650);
+      };
 
-For outcomes j = 1..J with prices P_j:
-
-ΔOutcome_{k,j} = treatment effect for outcome j (in outcome units per ha)
-BenefitPerHa_k = Σ_j [ ΔOutcome_{k,j} * P_j ]
-EffectiveBenefitPerHa_k = BenefitPerHa_k * (1 - Risk) </div> <p class="appendix-note">
-Keep outcome units explicit in the dataset dictionary. The tool remains valid as long as every outcome has a defensible value per unit and all benefits/costs use consistent currency units. </p>
-
-
-  <h3>7.4 Recommended reproducibility practice</h3>
-  <p>
-    For each analysis, store together:
-  </p>
-  <ul class="appendix-list">
-    <li>the imported dataset (tab-delimited extract or the uploaded workbook),</li>
-    <li>the scenario export (JSON) from the tool,</li>
-    <li>and this technical appendix (same version as the deployed build).</li>
-  </ul>
-  <p class="appendix-footer-note">
-    This guarantees a reviewer can reconstruct: (i) baseline replication within replicates, (ii) any unit scaling rules, (iii) the annual cash-flow series,
-    and (iv) the PV/NPV/BCR/ROI calculations used for ranking and exports.
-  </p>
-</section>
-
-<section class="card appendix-section">
-  <h2>8. References (standard definitions)</h2>
-  <p>
-    The PV/NPV/BCR framework follows standard cost–benefit analysis texts. If you need a citable methodological reference for a report,
-    the following are widely used:
-  </p>
-  <div class="appendix-table-wrapper">
-    <table class="appendix-table">
-      <thead>
-        <tr>
-          <th>Reference</th>
-          <th>Use in this tool</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Boardman, A. E., Greenberg, D. H., Vining, A. R., &amp; Weimer, D. L. (2018). <em>Cost–Benefit Analysis: Concepts and Practice</em> (5th ed.). Cambridge University Press.</td>
-          <td>PV discounting, NPV definition, benefit–cost ratio conventions.</td>
-        </tr>
-        <tr>
-          <td>Gittinger, J. P. (1982). <em>Economic Analysis of Agricultural Projects</em> (2nd ed.). Johns Hopkins University Press.</td>
-          <td>Agricultural project appraisal structure; practical interpretation of discounted indicators.</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <p class="appendix-note">
-    Dataset-specific rules (control flag, replicate baselines, and amendment cost scaling) are defined by the imported trial’s data dictionary and implemented directly in the tool’s preprocessing step.
-  </p>
-</section>
-
-  </div>
+      if (btn) btn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+      window.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+    })();
+  </script>
 </body>
 </html>
