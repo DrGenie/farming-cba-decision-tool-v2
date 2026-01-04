@@ -142,7 +142,17 @@
     return b - Math.sqrt((1 - r) * (b - a) * (b - c));
   }
 
+  function ensureToastRoot() {
+    if (document.getElementById("toast-root")) return;
+    const div = document.createElement("div");
+    div.id = "toast-root";
+    div.setAttribute("aria-live", "polite");
+    div.setAttribute("aria-atomic", "true");
+    document.body.appendChild(div);
+  }
+
   function showToast(message) {
+    ensureToastRoot();
     const root = document.getElementById("toast-root") || document.body;
     const toast = document.createElement("div");
     toast.className = "toast";
@@ -292,8 +302,6 @@
   // =========================
   // 4) CSV/TSV + DICTIONARY PARSING
   // =========================
-
-  // Robust delimited parser with quotes, supports CSV or TSV.
   function parseDelimited(text, delimiter) {
     const rows = [];
     let i = 0;
@@ -333,7 +341,6 @@
           continue;
         }
         if (ch === "\r") {
-          // ignore
           i++;
           continue;
         }
@@ -351,20 +358,16 @@
     }
     row.push(field);
     rows.push(row);
-
-    // trim trailing empty rows
     while (rows.length && rows[rows.length - 1].every(c => String(c ?? "").trim() === "")) rows.pop();
     return rows;
   }
 
   function detectDelimiter(text) {
-    // Prefer tab if present in header line
     const firstLine = (text || "").split(/\n/).find(l => l.trim().length > 0) || "";
     const tabCount = (firstLine.match(/\t/g) || []).length;
     const commaCount = (firstLine.match(/,/g) || []).length;
     if (tabCount >= commaCount && tabCount > 0) return "\t";
     if (commaCount > 0) return ",";
-    // fallback: if text contains many tabs later
     const tabs = (text.match(/\t/g) || []).length;
     const commas = (text.match(/,/g) || []).length;
     if (tabs >= commas && tabs > 0) return "\t";
@@ -402,10 +405,6 @@
   }
 
   function splitDictionaryAndDataFromText(rawText) {
-    // Supports a single TXT that includes a data dictionary section and then a data section.
-    // Strategy:
-    // 1) Identify the first table that looks like a dictionary (variable/description).
-    // 2) Identify the next table that looks like data (wide header, many columns, or includes Yield / Amendment / Replicate).
     const text = String(rawText || "");
     const chunks = text.split(/\n{2,}/g).map(s => s.trim()).filter(Boolean);
     if (chunks.length < 2) return { dictText: null, dataText: text };
@@ -444,8 +443,6 @@
     if (dictIdx >= 0 && dataIdx >= 0) {
       return { dictText: chunks[dictIdx], dataText: chunks[dataIdx] };
     }
-
-    // If no confident split, treat entire text as data
     return { dictText: null, dataText: text };
   }
 
@@ -456,7 +453,6 @@
     if (!tbl.length) return null;
     const objs = headersToObjects(tbl);
 
-    // Try to map keys
     const keys = Object.keys(objs[0] || {});
     const lowerKeys = keys.map(k => k.toLowerCase());
 
@@ -486,10 +482,7 @@
       });
     });
 
-    return {
-      rows: objs,
-      map: dict
-    };
+    return { rows: objs, map: dict };
   }
 
   function inferSchema(rows, dictionary) {
@@ -504,7 +497,6 @@
       return null;
     }
 
-    // Use dictionary roles if present
     const dictRoleMatch = role => {
       if (!dictionary || !dictionary.map) return null;
       for (const [k, meta] of dictionary.map.entries()) {
@@ -527,7 +519,6 @@
     const controlFlagCol = dictRoleMatch("control") || bestHeader(["is_control", "control", "baseline"]);
     const yieldCol = dictRoleMatch("yield") || bestHeader(["yield t/ha", "yield", "grain yield", "yield_tha", "yield (t/ha)"]);
 
-    // Identify likely cost columns (keep all numeric candidates that look like costs)
     const costCols = headers.filter(h => {
       const s = h.toLowerCase();
       const isCosty =
@@ -540,10 +531,8 @@
       return isCosty && !isClearlyNotCost;
     });
 
-    // Plot area used only if costs are per plot; inferred if exists.
     const plotAreaCol = bestHeader(["plot area", "plot_area", "area (ha)", "area_ha", "plot_ha", "ha"]);
 
-    // Additional numeric outcomes can be included if needed; for now, focus on yield plus costs.
     return {
       headers,
       treatmentCol,
@@ -570,7 +559,6 @@
     const tCol = schema.treatmentCol;
     const cCol = schema.controlFlagCol;
 
-    // Prefer explicit control flag column if numeric/boolean.
     if (cCol) {
       for (const r of rows) {
         const v = r[cCol];
@@ -580,7 +568,6 @@
       }
     }
 
-    // Otherwise detect by treatment label contains control/baseline
     if (tCol) {
       const counts = new Map();
       for (const r of rows) {
@@ -603,7 +590,6 @@
         return best;
       }
     }
-
     return null;
   }
 
@@ -613,21 +599,17 @@
 
     const h = String(col || "").toLowerCase();
 
-    // Rule: if column name suggests per hectare, treat as per ha.
     const looksPerHa = h.includes("/ha") || h.includes("per ha") || h.includes("per_ha") || h.includes("ha)");
     if (looksPerHa) return raw;
 
-    // Otherwise, if plot area exists and looks sensible, convert per plot to per ha by dividing by plot area.
     if (schema.plotAreaCol) {
       const a = parseNumber(row[schema.plotAreaCol]);
       if (Number.isFinite(a) && a > 0) return raw / a;
     }
-
-    // Fallback: treat as per ha (most trial sheets already encode per ha).
     return raw;
   }
 
-  function computeDerivedFromDataset(rows, schema, dictionary) {
+  function computeDerivedFromDataset(rows, schema) {
     const checks = [];
     const derived = {
       cleanedRows: [],
@@ -643,7 +625,6 @@
       return derived;
     }
 
-    // Required columns
     if (!schema.treatmentCol) checks.push({ code: "NO_TREATMENT_COL", severity: "error", message: "Treatment column not found.", count: 0, detail: "" });
     if (!schema.replicateCol) checks.push({ code: "NO_REPLICATE_COL", severity: "warn", message: "Replicate column not found. Replicate-specific baselines will fall back to overall control mean.", count: 0, detail: "" });
     if (!schema.yieldCol) checks.push({ code: "NO_YIELD_COL", severity: "error", message: "Yield column not found.", count: 0, detail: "" });
@@ -653,7 +634,6 @@
 
     if (!controlKey) checks.push({ code: "NO_CONTROL_DETECTED", severity: "error", message: "Control treatment could not be detected. Provide an is_control column or ensure the control label includes the word control.", count: 0, detail: "" });
 
-    // Clean and standardise rows
     const cleaned = rows.map((r, idx) => {
       const treatVal = schema.treatmentCol ? r[schema.treatmentCol] : "";
       const repVal = schema.replicateCol ? r[schema.replicateCol] : "";
@@ -691,16 +671,13 @@
 
     derived.cleanedRows = cleaned;
 
-    // Data checks: missing yields
     const missingYield = cleaned.filter(r => !Number.isFinite(r.yield)).length;
     if (missingYield) checks.push({ code: "MISSING_YIELD", severity: "warn", message: "Some rows have missing yield values. These are excluded from yield summaries.", count: missingYield, detail: "" });
 
-    // Data checks: negative yields
     const negYield = cleaned.filter(r => Number.isFinite(r.yield) && r.yield < 0).length;
     if (negYield) checks.push({ code: "NEGATIVE_YIELD", severity: "warn", message: "Some rows have negative yield values. Check units or data entry.", count: negYield, detail: "" });
 
-    // Baselines: replicate-specific control mean yield and control cost means
-    const reps = new Map(); // repKey -> { ctrlY: [], ctrlCostsByCol: Map(col -> []) }
+    const reps = new Map();
     const overallCtrlY = [];
     const overallCtrlCosts = new Map();
     (schema.costCols || []).forEach(c => overallCtrlCosts.set(c, []));
@@ -712,6 +689,7 @@
         const v = r.costsPerHa[c];
         if (Number.isFinite(v)) overallCtrlCosts.get(c).push(v);
       });
+
       const repKey = schema.replicateCol ? (r.replicate || "__NO_REP__") : "__NO_REP__";
       if (!reps.has(repKey)) {
         const m = new Map();
@@ -731,7 +709,6 @@
       checks.push({ code: "CONTROL_YIELD_MISSING", severity: "error", message: "Control yields are missing. Cannot compute deltas.", count: 0, detail: "" });
     }
 
-    // replicate baselines
     const replicateBaselines = new Map();
     for (const [repKey, entry] of reps.entries()) {
       const yMean = mean(entry.ctrlY);
@@ -746,7 +723,6 @@
     }
     derived.replicateBaselines = replicateBaselines;
 
-    // Check: replicates without control
     if (schema.replicateCol) {
       const allRepKeys = new Set(cleaned.map(r => r.replicate || "__MISSING_REP__"));
       let repsNoCtrl = 0;
@@ -765,7 +741,6 @@
       }
     }
 
-    // Plot-level deltas vs replicate baseline
     const plotDeltas = cleaned.map(r => {
       const repKey = schema.replicateCol ? (r.replicate || "__NO_REP__") : "__NO_REP__";
       const base = replicateBaselines.get(repKey) || { yieldMean: overallCtrlMeanYield, costsMeanByCol: {} };
@@ -785,7 +760,6 @@
     });
     derived.plotDeltas = plotDeltas;
 
-    // Treatment summaries (missing-safe)
     const byTreat = new Map();
     plotDeltas.forEach(r => {
       if (!r.treatmentKey) return;
@@ -795,7 +769,6 @@
           treatmentLabel: r.treatment || r.treatmentKey,
           isControl: !!r.isControl,
           n: 0,
-          nYield: 0,
           yield: [],
           deltaYield: [],
           costsByCol: {},
@@ -844,7 +817,6 @@
       summaries.push(out);
     }
 
-    // Outlier checks on deltaYield
     const dyAll = plotDeltas.map(r => r.deltaYield).filter(v => Number.isFinite(v));
     const outFlags = iqrOutlierFlags(dyAll);
     if (Number.isFinite(outFlags.outliers) && outFlags.outliers > 0) {
@@ -857,7 +829,6 @@
       });
     }
 
-    // Low replication
     const lowN = summaries.filter(s => !s.isControl && (s.nYield || 0) < 2).length;
     if (lowN) {
       checks.push({
@@ -869,7 +840,6 @@
       });
     }
 
-    // Missing costs in cost columns
     let missingCostCells = 0;
     (schema.costCols || []).forEach(c => {
       plotDeltas.forEach(r => {
@@ -887,7 +857,6 @@
     }
 
     derived.treatmentSummary = summaries;
-
     return derived;
   }
 
@@ -904,9 +873,6 @@
   }
 
   function extractIncrementalCostsFromSummary(summary, schema) {
-    // Convert deltaCosts per ha into the model's three buckets:
-    // labourCost, materialsCost, servicesCost. Anything not clearly labour is treated as materials by default.
-    // This is deterministic and transparent: labour-like headers -> labour; service-like headers -> services; else -> materials.
     let labour = 0;
     let services = 0;
     let materials = 0;
@@ -944,13 +910,10 @@
 
     const controlName = controlSummary ? controlSummary.treatmentLabel : "Control (baseline)";
 
-    // Keep farm area from existing control if present
     const currentControl = model.treatments.find(t => t.isControl) || model.treatments[0];
     const farmArea = currentControl ? Number(currentControl.area) || 100 : 100;
 
     const newTreatments = [];
-
-    // Control first
     newTreatments.push({
       id: uid(),
       name: controlName || "Control (baseline)",
@@ -968,7 +931,6 @@
       recurrenceYears: 0
     });
 
-    // Treatments
     derived.treatmentSummary
       .filter(s => !s.isControl)
       .sort((a, b) => {
@@ -999,14 +961,12 @@
 
     model.treatments = newTreatments;
     initTreatmentDeltas();
-
     showToast("Dataset applied. Treatments calibrated from replicate-specific deltas versus control.");
   }
 
   // =========================
   // 6) CBA ENGINE: PER TREATMENT VS CONTROL
   // =========================
-
   function irr(cf) {
     const hasPos = cf.some(v => v > 0);
     const hasNeg = cf.some(v => v < 0);
@@ -1072,7 +1032,6 @@
   }
 
   function getGrainPrice() {
-    // Priority: explicit input if exists, else yield output value
     const el = document.getElementById("grainPrice");
     const v = el ? parseNumber(el.value) : NaN;
     if (Number.isFinite(v)) return v;
@@ -1089,7 +1048,6 @@
   }
 
   function getRecurrenceYears(t) {
-    // Treatment-level configuration can be overridden via UI if present in the treatments list.
     const v = Number(t.recurrenceYears);
     return Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0;
   }
@@ -1107,7 +1065,6 @@
     const yieldOut = ensureYieldOutput();
     const yieldDelta = Number(t.deltas && t.deltas[yieldOut.id]) || 0;
 
-    // Benefits: yield delta * price, applied for years 1..min(persistence, years).
     const benefitByYear = new Array(years + 1).fill(0);
     for (let y = 1; y <= years; y++) {
       if (persistence === 0 || y > persistence) {
@@ -1118,11 +1075,6 @@
       }
     }
 
-    // Costs: incremental costs are incurred when the treatment is applied.
-    // Cost scaling rule implemented here:
-    // - materialsCost, servicesCost, labourCost are treated as incremental costs in $ per ha per application.
-    // - They are applied in year 0 and then repeated every recurrenceYears if recurrenceYears > 0.
-    // - Capital cost is incremental and occurs in year 0 only.
     const costByYear = new Array(years + 1).fill(0);
     const perHaApplicationCost =
       (Number(t.materialsCost) || 0) + (Number(t.servicesCost) || 0) + (Number(t.labourCost) || 0);
@@ -1130,9 +1082,8 @@
     const cap0 = Number(t.capitalCost) || 0;
     costByYear[0] += cap0;
 
-    // Application years: year 0 always included for non-control treatments, and repeats
     if (!t.isControl) {
-      costByYear[0] += perHaApplicationCost * area; // year 0 application
+      costByYear[0] += perHaApplicationCost * area;
       if (recurrence > 0) {
         for (let y = recurrence; y <= years; y += recurrence) {
           costByYear[y] += perHaApplicationCost * area;
@@ -1200,7 +1151,6 @@
       })
     );
 
-    // Rank treatments excluding control
     const ranked = results
       .filter(r => !r.isControl)
       .slice()
@@ -1211,7 +1161,6 @@
       })
       .map((r, i) => ({ ...r, rankByNpv: i + 1 }));
 
-    // attach ranks
     const out = results.map(r => {
       if (r.isControl) return { ...r, rankByNpv: null };
       const rr = ranked.find(x => x.treatmentId === r.treatmentId);
@@ -1221,8 +1170,6 @@
     state.results.perTreatmentBaseCase = out;
     state.results.lastComputedAt = new Date().toISOString();
 
-    // Also compute a compact "project total" for compatibility with existing summary cards:
-    // sum across all non-control treatments (this matches the previous tool behaviour).
     const totalBenefit = new Array(years + 1).fill(0);
     const totalCost = new Array(years + 1).fill(0);
     out.forEach(r => {
@@ -1260,7 +1207,6 @@
     treatments.forEach(t => {
       const baseRec = getRecurrenceYears(t);
       recurGrid.forEach(rec => {
-        // Allow sensitivity to vary recurrence even if base is different.
         const recurrenceYears = Number.isFinite(rec) ? Math.max(0, Math.floor(rec)) : baseRec;
         persistGrid.forEach(persistenceYears => {
           discGrid.forEach(discountRatePct => {
@@ -1301,7 +1247,6 @@
   // =========================
   // 7) RESULTS RENDERING (CONTROL-CENTRIC)
   // =========================
-
   const $ = sel => document.querySelector(sel);
   const $$ = sel => Array.from(document.querySelectorAll(sel));
   const setVal = (sel, text) => {
@@ -1398,8 +1343,6 @@
       .slice()
       .sort((a, b) => (Number.isFinite(b.npv) ? b.npv : -Infinity) - (Number.isFinite(a.npv) ? a.npv : -Infinity));
 
-    // Build columns: Control + each treatment, and for each treatment, also show Δ columns.
-    // Since results are already vs control, Δ equals the treatment value. We still display ΔNPV and ΔPV cost explicitly.
     const indicators = [
       { key: "pvBenefits", label: "PV benefits" },
       { key: "pvCosts", label: "PV costs" },
@@ -1444,28 +1387,22 @@
       first.textContent = ind.label;
       tr.appendChild(first);
 
-      // control value
       let controlVal = "";
       if (!control) controlVal = "n/a";
-      else {
-        controlVal = formatIndicatorValue(ind.key, control, true);
-      }
+      else controlVal = formatIndicatorValue(ind.key, control, true);
       const tdControl = document.createElement("td");
       tdControl.className = "control-col";
       tdControl.textContent = controlVal;
       tr.appendChild(tdControl);
 
-      // treatments + deltas
       treatments.forEach(t => {
         const td = document.createElement("td");
-        const valText = formatIndicatorValue(ind.key, t, false);
-        td.textContent = valText;
+        td.textContent = formatIndicatorValue(ind.key, t, false);
         td.className = classifyIndicatorCell(ind.key, t, "value");
         tr.appendChild(td);
 
         const tdD = document.createElement("td");
-        const dText = formatDeltaValue(ind.key, t);
-        tdD.textContent = dText;
+        tdD.textContent = formatDeltaValue(ind.key, t);
         tdD.className = classifyIndicatorCell(ind.key, t, "delta");
         tr.appendChild(tdD);
       });
@@ -1496,7 +1433,6 @@
   }
 
   function formatDeltaValue(key, r) {
-    // Values are already vs control, so delta columns show the same quantity, with % where meaningful.
     if (key === "pvBenefits") return money(r.pvBenefits);
     if (key === "pvCosts") return money(r.pvCosts);
     if (key === "npv") return money(r.npv);
@@ -1510,7 +1446,6 @@
 
   function classifyIndicatorCell(key, r, mode) {
     if (key === "pvCosts" || key === "deltaPvCost") {
-      // Lower cost is better; positive cost means worse vs control.
       const v = r.pvCosts;
       if (!Number.isFinite(v)) return mode === "delta" ? "delta-cell" : "value-cell";
       const cls = v > 0 ? "neg" : v < 0 ? "pos" : "zero";
@@ -1553,7 +1488,6 @@
     const adopt = clamp(Number(model.adoption.base) || 1, 0, 1);
     const risk = clamp(Number(model.risk.base) || 0, 0, 1);
 
-    // Narrative must have no bullets, no em dash, no abbreviations.
     const parts = [];
     parts.push(
       `This results panel compares each treatment against the control baseline using discounted cashflows over ${years} years. The grain price used in the base case is ${money(price)} per tonne, the discount rate is ${fmt(disc)} percent per year, the assumed persistence of yield effects is ${persistence} years, the adoption multiplier is ${fmt(adopt)}, and the risk multiplier reduces benefits by ${fmt(risk)} as a proportion.`
@@ -1600,7 +1534,7 @@
       return sevRank(a.severity) - sevRank(b.severity);
     });
 
-    const html = `
+    root.innerHTML = `
       <table class="summary-table checks-table">
         <thead>
           <tr>
@@ -1628,7 +1562,6 @@
         </tbody>
       </table>
     `;
-    root.innerHTML = html;
   }
 
   // =========================
@@ -1810,7 +1743,6 @@
     const wb = XLSX.utils.book_new();
     const name = slug(model.project.name || "project");
 
-    // Settings
     const settingsAoA = [
       ["Project name", model.project.name],
       ["Analysis years", model.time.years],
@@ -1824,7 +1756,6 @@
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(settingsAoA), "Settings");
 
-    // Cleaned data
     const derived = state.dataset.derived;
     if (derived && derived.plotDeltas && derived.plotDeltas.length) {
       const schema = state.dataset.schema;
@@ -1840,18 +1771,13 @@
           control_yield_mean_replicate: Number.isFinite(r.controlYieldMeanRep) ? r.controlYieldMeanRep : null,
           delta_yield: Number.isFinite(r.deltaYield) ? r.deltaYield : null
         };
-        costCols.forEach(c => {
-          obj[`cost_per_ha:${c}`] = Number.isFinite(r.costsPerHa[c]) ? r.costsPerHa[c] : null;
-        });
-        costCols.forEach(c => {
-          obj[`delta_cost_per_ha:${c}`] = Number.isFinite(r.deltaCostsPerHa[c]) ? r.deltaCostsPerHa[c] : null;
-        });
+        costCols.forEach(c => { obj[`cost_per_ha:${c}`] = Number.isFinite(r.costsPerHa[c]) ? r.costsPerHa[c] : null; });
+        costCols.forEach(c => { obj[`delta_cost_per_ha:${c}`] = Number.isFinite(r.deltaCostsPerHa[c]) ? r.deltaCostsPerHa[c] : null; });
         return obj;
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "CleanedData");
     }
 
-    // Treatment summary
     if (derived && derived.treatmentSummary && derived.treatmentSummary.length) {
       const schema = state.dataset.schema;
       const costCols = schema && schema.costCols ? schema.costCols.slice() : [];
@@ -1875,7 +1801,6 @@
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "TreatmentSummary");
     }
 
-    // Base case results
     const base = state.results.perTreatmentBaseCase || [];
     if (base.length) {
       const rows = base.map(r => ({
@@ -1898,7 +1823,6 @@
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "BaseCaseResults");
     }
 
-    // Sensitivity grid
     const grid = state.results.sensitivityGrid || [];
     if (grid.length) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(grid), "SensitivityGrid");
@@ -1915,7 +1839,6 @@
   function buildAiBriefingText() {
     const base = state.results.perTreatmentBaseCase || [];
     const treatments = base.filter(r => !r.isControl).slice().sort((a, b) => (b.npv || -Infinity) - (a.npv || -Infinity));
-    const control = base.find(r => r.isControl) || null;
 
     const years = Math.floor(model.time.years || 0);
     const price = getGrainPrice();
@@ -1969,19 +1892,10 @@
       );
     }
 
-    p.push(
-      `Include a section that explains the meaning of net present value, present value of benefits, present value of costs, benefit cost ratio, and return on investment in farmer facing terms.`
-    );
+    p.push(`Include a section that explains the meaning of net present value, present value of benefits, present value of costs, benefit cost ratio, and return on investment in farmer facing terms.`);
+    p.push(`Include a section that explains sensitivity, focusing on grain price, discount rate, persistence of yield effects, and recurrence of costs. Explain which inputs are likely to change and how that could move results.`);
+    p.push(`Include a section that lists practical options to improve weaker treatments without giving a directive, such as reducing cost items, changing timing, improving establishment, or verifying the yield response with additional seasons or sites.`);
 
-    p.push(
-      `Include a section that explains sensitivity, focusing on grain price, discount rate, persistence of yield effects, and recurrence of costs. Explain which inputs are likely to change and how that could move results.`
-    );
-
-    p.push(
-      `Include a section that lists practical options to improve weaker treatments without giving a directive, such as reducing cost items, changing timing, improving establishment, or verifying the yield response with additional seasons or sites.`
-    );
-
-    // Add a compact embedded results block for the model to reference in its narrative
     const resultsBlock = {
       project: {
         name: model.project.name,
@@ -2008,7 +1922,6 @@
 
     p.push(`Use the following computed results as the only quantitative basis for the brief.`);
     p.push(JSON.stringify(resultsBlock, null, 2));
-
     return p.join("\n\n");
   }
 
@@ -2066,7 +1979,7 @@
   }
 
   // =========================
-  // 11) IMPORT PIPELINE (UPLOAD + PASTE + DICTIONARY + VALIDATION + COMMIT)
+  // 11) IMPORT PIPELINE
   // =========================
   function renderImportSummary() {
     const el = document.getElementById("importSummary") || document.getElementById("dataImportSummary") || document.getElementById("importStatus");
@@ -2089,7 +2002,6 @@
     parts.push(`Cost columns: ${(schema.costCols || []).length.toLocaleString()}.`);
     if (derived && derived.controlKey) parts.push(`Detected control key: ${derived.controlKey}.`);
     if (state.dataset.committedAt) parts.push(`Committed at: ${state.dataset.committedAt}.`);
-
     el.textContent = parts.join(" ");
   }
 
@@ -2112,7 +2024,6 @@
 
     renderImportSummary();
     renderDataChecks();
-
     showToast("Dataset parsed and staged. Review Data Checks, then commit.");
   }
 
@@ -2120,7 +2031,6 @@
     const derived = state.dataset.derived;
     const schema = state.dataset.schema;
 
-    // Validate essential requirements before commit
     const errors = (derived && derived.checks ? derived.checks.filter(c => c.severity === "error") : []);
     if (errors.length) {
       showToast("Cannot commit. Fix the error level data checks first.");
@@ -2134,11 +2044,8 @@
     }
 
     state.dataset.committedAt = new Date().toISOString();
-
-    // Apply dataset-derived deltas and costs to the model
     applyDatasetToModel();
 
-    // Re-render and recompute
     renderAll();
     setBasicsFieldsFromModel();
     calcAndRender();
@@ -2149,8 +2056,6 @@
   }
 
   function initImportBindings() {
-    // Bind to commonly used IDs if they exist, otherwise use data-action delegation.
-
     const fileInput =
       document.getElementById("dataFile") ||
       document.getElementById("datasetFile") ||
@@ -2204,7 +2109,6 @@
       });
     }
 
-    // Delegation for contract-style buttons
     document.addEventListener("click", e => {
       const btn = e.target.closest("[data-action]");
       if (!btn) return;
@@ -2293,6 +2197,18 @@
       if (act === "load-scenario") {
         e.preventDefault();
         loadScenarioFromUi();
+        return;
+      }
+
+      if (act === "add-output") {
+        e.preventDefault();
+        addOutput();
+        return;
+      }
+
+      if (act === "add-treatment") {
+        e.preventDefault();
+        addTreatment();
         return;
       }
     });
@@ -2392,7 +2308,6 @@
       if (Array.isArray(scn.config.sensPersistence)) state.config.sensPersistence = scn.config.sensPersistence.slice();
       if (Array.isArray(scn.config.sensRecurrence)) state.config.sensRecurrence = scn.config.sensRecurrence.slice();
 
-      // If grainPrice input exists, set it
       const gp = document.getElementById("grainPrice");
       if (gp && Number.isFinite(scn.config.grainPricePerTonne)) gp.value = scn.config.grainPricePerTonne;
       const py = document.getElementById("persistenceYears");
@@ -2400,7 +2315,6 @@
     }
 
     if (Array.isArray(scn.treatments) && scn.treatments.length) {
-      // Attempt to match by name first, then by id
       const existing = model.treatments.slice();
       scn.treatments.forEach(st => {
         const match =
@@ -2413,9 +2327,7 @@
         if (Number.isFinite(st.materialsCost)) match.materialsCost = st.materialsCost;
         if (Number.isFinite(st.servicesCost)) match.servicesCost = st.servicesCost;
         if (Number.isFinite(st.capitalCost)) match.capitalCost = st.capitalCost;
-        if (st.deltas && typeof st.deltas === "object") {
-          match.deltas = { ...match.deltas, ...st.deltas };
-        }
+        if (st.deltas && typeof st.deltas === "object") match.deltas = { ...match.deltas, ...st.deltas };
       });
       initTreatmentDeltas();
     }
@@ -2496,7 +2408,7 @@
   }
 
   // =========================
-  // 13) DOM: TABS + SETTINGS BINDINGS (kept, safe)
+  // 13) DOM: TABS
   // =========================
   function switchTab(target) {
     if (!target) return;
@@ -2513,7 +2425,6 @@
     panels.forEach(p => {
       const key = p.dataset.tabPanel || (p.id ? p.id.replace(/^tab-/, "") : "");
       const match = key === target || p.id === target || p.id === "tab-" + target;
-
       const show = !!match;
       p.classList.toggle("active", show);
       p.classList.toggle("show", show);
@@ -2555,7 +2466,7 @@
   }
 
   // =========================
-  // 14) FORMS: PROJECT + TIME + RISK (existing IDs, safe)
+  // 14) FORMS: PROJECT + TIME + RISK
   // =========================
   function setBasicsFieldsFromModel() {
     if ($("#projectName")) $("#projectName").value = model.project.name || "";
@@ -2596,11 +2507,9 @@
     if ($("#rFin")) $("#rFin").value = model.risk.fin;
     if ($("#rMan")) $("#rMan").value = model.risk.man;
 
-    // Persistence and grain price (if present)
     if ($("#persistenceYears")) $("#persistenceYears").value = getPersistenceYears();
     if ($("#grainPrice")) $("#grainPrice").value = getGrainPrice();
 
-    // Discount schedule inputs if present
     const sched = model.time.discountSchedule || DEFAULT_DISCOUNT_SCHEDULE;
     $$("input[data-disc-period]").forEach(inp => {
       const idx = +inp.dataset.discPeriod;
@@ -2627,7 +2536,6 @@
   function bindBasics() {
     setBasicsFieldsFromModel();
 
-    // Combined risk button if present
     const calcRiskBtn = $("#calcCombinedRisk");
     if (calcRiskBtn) {
       calcRiskBtn.addEventListener("click", e => {
@@ -2651,7 +2559,6 @@
       const t = e.target;
       if (!t) return;
 
-      // Discount schedule
       if (t.dataset && t.dataset.discPeriod !== undefined) {
         const idx = +t.dataset.discPeriod;
         const scenario = t.dataset.scenario;
@@ -2671,111 +2578,43 @@
       if (!id) return;
 
       switch (id) {
-        case "projectName":
-          model.project.name = t.value;
-          break;
-        case "projectLead":
-          model.project.lead = t.value;
-          break;
-        case "analystNames":
-          model.project.analysts = t.value;
-          break;
-        case "projectTeam":
-          model.project.team = t.value;
-          break;
-        case "projectSummary":
-          model.project.summary = t.value;
-          break;
-        case "projectObjectives":
-          model.project.objectives = t.value;
-          break;
-        case "projectActivities":
-          model.project.activities = t.value;
-          break;
-        case "stakeholderGroups":
-          model.project.stakeholders = t.value;
-          break;
-        case "lastUpdated":
-          model.project.lastUpdated = t.value;
-          break;
-        case "projectGoal":
-          model.project.goal = t.value;
-          break;
-        case "withProject":
-          model.project.withProject = t.value;
-          break;
-        case "withoutProject":
-          model.project.withoutProject = t.value;
-          break;
-        case "organisation":
-          model.project.organisation = t.value;
-          break;
-        case "contactEmail":
-          model.project.contactEmail = t.value;
-          break;
-        case "contactPhone":
-          model.project.contactPhone = t.value;
-          break;
+        case "projectName": model.project.name = t.value; break;
+        case "projectLead": model.project.lead = t.value; break;
+        case "analystNames": model.project.analysts = t.value; break;
+        case "projectTeam": model.project.team = t.value; break;
+        case "projectSummary": model.project.summary = t.value; break;
+        case "projectObjectives": model.project.objectives = t.value; break;
+        case "projectActivities": model.project.activities = t.value; break;
+        case "stakeholderGroups": model.project.stakeholders = t.value; break;
+        case "lastUpdated": model.project.lastUpdated = t.value; break;
+        case "projectGoal": model.project.goal = t.value; break;
+        case "withProject": model.project.withProject = t.value; break;
+        case "withoutProject": model.project.withoutProject = t.value; break;
+        case "organisation": model.project.organisation = t.value; break;
+        case "contactEmail": model.project.contactEmail = t.value; break;
+        case "contactPhone": model.project.contactPhone = t.value; break;
 
-        case "startYear":
-          model.time.startYear = +t.value;
-          break;
-        case "projectStartYear":
-          model.time.projectStartYear = +t.value;
-          break;
-        case "years":
-          model.time.years = +t.value;
-          break;
-        case "discBase":
-          model.time.discBase = +t.value;
-          break;
-        case "discLow":
-          model.time.discLow = +t.value;
-          break;
-        case "discHigh":
-          model.time.discHigh = +t.value;
-          break;
-        case "mirrFinance":
-          model.time.mirrFinance = +t.value;
-          break;
-        case "mirrReinvest":
-          model.time.mirrReinvest = +t.value;
-          break;
+        case "startYear": model.time.startYear = +t.value; break;
+        case "projectStartYear": model.time.projectStartYear = +t.value; break;
+        case "years": model.time.years = +t.value; break;
+        case "discBase": model.time.discBase = +t.value; break;
+        case "discLow": model.time.discLow = +t.value; break;
+        case "discHigh": model.time.discHigh = +t.value; break;
+        case "mirrFinance": model.time.mirrFinance = +t.value; break;
+        case "mirrReinvest": model.time.mirrReinvest = +t.value; break;
 
-        case "adoptBase":
-          model.adoption.base = +t.value;
-          break;
-        case "adoptLow":
-          model.adoption.low = +t.value;
-          break;
-        case "adoptHigh":
-          model.adoption.high = +t.value;
-          break;
+        case "adoptBase": model.adoption.base = +t.value; break;
+        case "adoptLow": model.adoption.low = +t.value; break;
+        case "adoptHigh": model.adoption.high = +t.value; break;
 
-        case "riskBase":
-          model.risk.base = +t.value;
-          break;
-        case "riskLow":
-          model.risk.low = +t.value;
-          break;
-        case "riskHigh":
-          model.risk.high = +t.value;
-          break;
-        case "rTech":
-          model.risk.tech = +t.value;
-          break;
-        case "rNonCoop":
-          model.risk.nonCoop = +t.value;
-          break;
-        case "rSocio":
-          model.risk.socio = +t.value;
-          break;
-        case "rFin":
-          model.risk.fin = +t.value;
-          break;
-        case "rMan":
-          model.risk.man = +t.value;
-          break;
+        case "riskBase": model.risk.base = +t.value; break;
+        case "riskLow": model.risk.low = +t.value; break;
+        case "riskHigh": model.risk.high = +t.value; break;
+        case "rTech": model.risk.tech = +t.value; break;
+        case "rNonCoop": model.risk.nonCoop = +t.value; break;
+        case "rSocio": model.risk.socio = +t.value; break;
+        case "rFin": model.risk.fin = +t.value; break;
+        case "rMan": model.risk.man = +t.value; break;
 
         case "persistenceYears":
           state.config.persistenceYears = Math.max(0, Math.floor(+t.value || 0));
@@ -2791,7 +2630,6 @@
       calcAndRenderDebounced();
     });
 
-    // Save and load scenario buttons if present
     const saveScn = $("#saveScenario") || $("#saveScenarioBtn");
     if (saveScn) saveScn.addEventListener("click", e => { e.preventDefault(); saveScenarioFromUi(); });
 
@@ -2806,11 +2644,7 @@
         const store = getScenarioStore();
         if (store[val]) {
           applyScenarioObject(store[val]);
-          try {
-            localStorage.setItem(STORAGE_KEYS.activeScenario, val);
-          } catch {
-            // ignore
-          }
+          try { localStorage.setItem(STORAGE_KEYS.activeScenario, val); } catch { /* ignore */ }
           showToast("Scenario loaded.");
         }
       });
@@ -2818,8 +2652,44 @@
   }
 
   // =========================
-  // 15) RENDER OUTPUTS + TREATMENTS (kept, extended for recurrence)
+  // 15) RENDER OUTPUTS + TREATMENTS
   // =========================
+  function addOutput() {
+    const o = { id: uid(), name: "New output", unit: "units", value: 0, source: "Input Directly" };
+    model.outputs.push(o);
+    model.treatments.forEach(t => { if (!t.deltas) t.deltas = {}; t.deltas[o.id] = 0; });
+    renderOutputs();
+    renderTreatments();
+    calcAndRenderDebounced();
+    showToast("Output metric added.");
+  }
+
+  function addTreatment() {
+    const control = model.treatments.find(t => t.isControl) || model.treatments[0];
+    const area = control ? Number(control.area) || 100 : 100;
+    const t = {
+      id: uid(),
+      name: "New treatment",
+      area,
+      adoption: 1,
+      deltas: {},
+      labourCost: 0,
+      materialsCost: 0,
+      servicesCost: 0,
+      capitalCost: 0,
+      constrained: false,
+      source: "Input Directly",
+      isControl: false,
+      notes: "",
+      recurrenceYears: 0
+    };
+    model.outputs.forEach(o => { t.deltas[o.id] = 0; });
+    model.treatments.push(t);
+    renderTreatments();
+    calcAndRenderDebounced();
+    showToast("Treatment added.");
+  }
+
   function renderOutputs() {
     const root = $("#outputsList");
     if (!root) return;
@@ -2873,6 +2743,12 @@
       calcAndRender();
       showToast("Output metric removed.");
     };
+
+    const addBtn = document.getElementById("addOutput") || document.getElementById("addOutputBtn");
+    if (addBtn && !addBtn.__bound) {
+      addBtn.__bound = true;
+      addBtn.addEventListener("click", e => { e.preventDefault(); addOutput(); });
+    }
   }
 
   function renderTreatments() {
@@ -2885,7 +2761,6 @@
       const services = Number(t.servicesCost) || 0;
       const labour = Number(t.labourCost) || 0;
       const totalPerHa = materials + services + labour;
-
       const rec = getRecurrenceYears(t);
 
       const el = document.createElement("div");
@@ -2966,9 +2841,7 @@
 
       const tk = e.target.dataset.tk;
       if (tk) {
-        if (tk === "constrained") {
-          t[tk] = e.target.value === "true";
-        } else if (tk === "name" || tk === "source" || tk === "notes") {
+        if (tk === "name" || tk === "source" || tk === "notes") {
           t[tk] = e.target.value;
         } else if (tk === "isControl") {
           const val = e.target.value === "control";
@@ -3013,6 +2886,12 @@
       renderControlCentricResults();
       showToast("Treatment removed.");
     });
+
+    const addBtn = document.getElementById("addTreatment") || document.getElementById("addTreatmentBtn");
+    if (addBtn && !addBtn.__bound) {
+      addBtn.__bound = true;
+      addBtn.addEventListener("click", e => { e.preventDefault(); addTreatment(); });
+    }
   }
 
   function renderAll() {
@@ -3023,7 +2902,7 @@
   }
 
   // =========================
-  // 16) MAIN CALC AND RENDER (existing summary IDs supported)
+  // 16) RESULTS + FILTERS
   // =========================
   function renderControlCentricResults(filterMode) {
     const base = computeBaseCaseResultsVsControl();
@@ -3039,8 +2918,7 @@
       document.getElementById("resultsQuickFilter") ||
       document.getElementById("comparisonFilter");
     const v = sel ? String(sel.value || "").trim() : "";
-    if (!v) return "all";
-    return v;
+    return v || "all";
   }
 
   function bindResultsFilters() {
@@ -3048,14 +2926,14 @@
       document.getElementById("resultsFilter") ||
       document.getElementById("resultsQuickFilter") ||
       document.getElementById("comparisonFilter");
-    if (sel) {
+    if (sel && !sel.__bound) {
+      sel.__bound = true;
       sel.addEventListener("change", () => {
         renderControlCentricResults(currentResultsFilterMode());
         showToast("Results filter applied.");
       });
     }
 
-    // Buttons with known IDs if present
     const map = [
       { id: "filterTopNpv", mode: "top5_npv" },
       { id: "filterTopBcr", mode: "top5_bcr" },
@@ -3064,7 +2942,8 @@
     ];
     map.forEach(m => {
       const b = document.getElementById(m.id);
-      if (b) {
+      if (b && !b.__bound) {
+        b.__bound = true;
         b.addEventListener("click", e => {
           e.preventDefault();
           renderControlCentricResults(m.mode);
@@ -3073,7 +2952,6 @@
       }
     });
 
-    // Delegation by data attribute if present
     document.addEventListener("click", e => {
       const b = e.target.closest("[data-results-filter]");
       if (!b) return;
@@ -3085,8 +2963,21 @@
     });
   }
 
+  // =========================
+  // 17) TOP SUMMARY CARDS (BACKWARD COMPATIBLE)
+  // =========================
+  function setFirstExistingText(ids, value) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.textContent = value;
+        return true;
+      }
+    }
+    return false;
+  }
+
   function calcAndRender() {
-    // Backward compatible summary cards for "whole project" by summing all non-control treatments
     const disc = Number(model.time.discBase) || 0;
     const years = Math.max(0, Math.floor(model.time.years || 0));
     const persistence = getPersistenceYears();
@@ -3118,170 +3009,171 @@
     const pvC = presentValue(costByYear, disc);
     const npv = pvB - pvC;
     const bcr = pvC > 0 ? pvB / pvC : NaN;
+    const roiPct = pvC > 0 ? (npv / pvC) * 100 : NaN;
 
-    setVal("#pvBenefits", money(pvB));
-    setVal("#pvCosts", money(pvC));
-
-    const npvEl = $("#npv");
-    if (npvEl) {
-      npvEl.textContent = money(npv);
-      npvEl.className = "value " + (npv >= 0 ? "positive" : "negative");
-    }
-
-    setVal("#bcr", Number.isFinite(bcr) ? fmt(bcr) : "n/a");
-
-    // Optional: show persistence and grain price
-    setVal("#simBcrTargetLabel", model.sim.targetBCR);
+    setFirstExistingText(["pvBenefits", "pvBenefitsVal", "kpiPvBenefits", "kpiPVB"], money(pvB));
+    setFirstExistingText(["pvCosts", "pvCostsVal", "kpiPvCosts", "kpiPVC"], money(pvC));
+    setFirstExistingText(["npv", "npvVal", "kpiNpv", "kpiNPV"], money(npv));
+    setFirstExistingText(["bcr", "bcrVal", "kpiBcr", "kpiBCR"], Number.isFinite(bcr) ? fmt(bcr) : "n/a");
+    setFirstExistingText(["roi", "roiVal", "kpiRoi", "kpiROI"], Number.isFinite(roiPct) ? percent(roiPct) : "n/a");
 
     renderControlCentricResults(currentResultsFilterMode());
-    renderImportSummary();
-    renderDataChecks();
+    renderAiBriefing();
   }
 
   // =========================
-  // 17) SENSITIVITY RENDER
+  // 18) SENSITIVITY SUMMARY RENDERING
   // =========================
   function renderSensitivitySummary() {
-    const root = document.getElementById("sensitivitySummary") || document.getElementById("sensSummary");
+    const root =
+      document.getElementById("sensitivitySummary") ||
+      document.getElementById("sensitivityResults") ||
+      document.getElementById("sensitivityPanel");
+
     if (!root) return;
 
     const grid = state.results.sensitivityGrid || [];
     if (!grid.length) {
-      root.innerHTML = `<p class="small muted">No sensitivity results yet.</p>`;
+      root.innerHTML = `<p class="small muted">No sensitivity results yet. Run sensitivity to generate the grid.</p>`;
       return;
     }
 
-    // Summarise per treatment: share of scenarios with positive NPV
-    const byT = new Map();
-    grid.forEach(g => {
-      if (!byT.has(g.treatment)) byT.set(g.treatment, { n: 0, pos: 0, meanNpv: 0 });
-      const s = byT.get(g.treatment);
-      s.n += 1;
-      if (Number.isFinite(g.npv) && g.npv > 0) s.pos += 1;
-      if (Number.isFinite(g.npv)) s.meanNpv += g.npv;
-    });
+    const treatments = Array.from(new Set(grid.map(g => g.treatment)));
+    const rows = grid.length;
 
-    const rows = [];
-    for (const [t, s] of byT.entries()) {
-      rows.push({
+    const byTreat = new Map();
+    treatments.forEach(t => byTreat.set(t, []));
+    grid.forEach(g => { if (byTreat.has(g.treatment)) byTreat.get(g.treatment).push(g); });
+
+    const summary = [];
+    for (const [t, arr] of byTreat.entries()) {
+      const npvs = arr.map(x => x.npv).filter(Number.isFinite);
+      const bcrs = arr.map(x => x.bcr).filter(Number.isFinite);
+      summary.push({
         treatment: t,
-        scenarios: s.n,
-        probPositiveNpv: s.n ? (s.pos / s.n) * 100 : NaN,
-        meanNpv: s.n ? s.meanNpv / s.n : NaN
+        scenarios: arr.length,
+        npv_min: npvs.length ? Math.min(...npvs) : NaN,
+        npv_med: median(npvs),
+        npv_max: npvs.length ? Math.max(...npvs) : NaN,
+        bcr_med: median(bcrs)
       });
     }
 
-    rows.sort((a, b) => (Number.isFinite(b.meanNpv) ? b.meanNpv : -Infinity) - (Number.isFinite(a.meanNpv) ? a.meanNpv : -Infinity));
+    summary.sort((a, b) => (Number.isFinite(b.npv_med) ? b.npv_med : -Infinity) - (Number.isFinite(a.npv_med) ? a.npv_med : -Infinity));
 
     root.innerHTML = `
+      <div class="small muted">Grid rows: ${rows.toLocaleString()}. Treatments: ${treatments.length.toLocaleString()}.</div>
       <table class="summary-table">
         <thead>
           <tr>
             <th>Treatment</th>
             <th>Scenarios</th>
-            <th>Share with positive net present value</th>
-            <th>Mean net present value</th>
+            <th>NPV min</th>
+            <th>NPV median</th>
+            <th>NPV max</th>
+            <th>BCR median</th>
           </tr>
         </thead>
         <tbody>
-          ${rows
-            .map(r => {
-              const cls = Number.isFinite(r.probPositiveNpv) ? (r.probPositiveNpv >= 50 ? "pos" : "neg") : "";
-              return `
-                <tr>
-                  <td>${esc(r.treatment)}</td>
-                  <td>${fmt(r.scenarios)}</td>
-                  <td class="${cls}">${Number.isFinite(r.probPositiveNpv) ? percent(r.probPositiveNpv) : "n/a"}</td>
-                  <td class="${classifyDelta(r.meanNpv)}">${money(r.meanNpv)}</td>
-                </tr>
-              `;
-            })
-            .join("")}
+          ${summary.slice(0, 20).map(s => `
+            <tr>
+              <td>${esc(s.treatment)}</td>
+              <td>${fmt(s.scenarios)}</td>
+              <td class="${classifyDelta(s.npv_min)}">${money(s.npv_min)}</td>
+              <td class="${classifyDelta(s.npv_med)}">${money(s.npv_med)}</td>
+              <td class="${classifyDelta(s.npv_max)}">${money(s.npv_max)}</td>
+              <td>${Number.isFinite(s.bcr_med) ? fmt(s.bcr_med) : "n/a"}</td>
+            </tr>
+          `).join("")}
         </tbody>
       </table>
+      <div class="small muted">Showing up to 20 treatments by median NPV across the grid.</div>
     `;
   }
 
+  function bindSensitivityControls() {
+    const runBtn = document.getElementById("runSensitivity") || document.getElementById("runSensitivityBtn");
+    if (runBtn && !runBtn.__bound) {
+      runBtn.__bound = true;
+      runBtn.addEventListener("click", e => {
+        e.preventDefault();
+        computeSensitivityGrid();
+        renderSensitivitySummary();
+      });
+    }
+
+    const exportBtn = document.getElementById("exportSensitivity") || document.getElementById("exportSensitivityBtn");
+    if (exportBtn && !exportBtn.__bound) {
+      exportBtn.__bound = true;
+      exportBtn.addEventListener("click", e => {
+        e.preventDefault();
+        exportSensitivityGridCsv();
+      });
+    }
+  }
+
   // =========================
-  // 18) ACTION BUTTONS (EXPORTS + SENSITIVITY + AI COPY)
+  // 19) AI COPY BUTTONS (OPTIONAL IDS)
   // =========================
-  function bindActionButtons() {
-    const exportCleanedBtn = $("#exportCleanedTsv");
-    if (exportCleanedBtn) exportCleanedBtn.addEventListener("click", e => { e.preventDefault(); exportCleanedDatasetTsv(); });
-
-    const exportTreatSumBtn = $("#exportTreatmentSummary");
-    if (exportTreatSumBtn) exportTreatSumBtn.addEventListener("click", e => { e.preventDefault(); exportTreatmentSummaryCsv(); });
-
-    const runSensBtn = $("#runSensitivity");
-    if (runSensBtn) runSensBtn.addEventListener("click", e => { e.preventDefault(); computeSensitivityGrid(); renderSensitivitySummary(); });
-
-    const exportSensBtn = $("#exportSensitivity");
-    if (exportSensBtn) exportSensBtn.addEventListener("click", e => { e.preventDefault(); exportSensitivityGridCsv(); });
-
-    const exportXlsxBtn = $("#exportWorkbook");
-    if (exportXlsxBtn) exportXlsxBtn.addEventListener("click", e => { e.preventDefault(); exportWorkbookIfAvailable(); });
-
-    const copyAiBtn = $("#copyAiBriefing");
-    if (copyAiBtn)
-      copyAiBtn.addEventListener("click", e => {
+  function bindAiButtons() {
+    const copyBrief = document.getElementById("copyAiBriefing") || document.getElementById("copyBriefingBtn");
+    if (copyBrief && !copyBrief.__bound) {
+      copyBrief.__bound = true;
+      copyBrief.addEventListener("click", async e => {
         e.preventDefault();
         const box = document.getElementById("aiBriefingText") || document.getElementById("copilotPreview");
         const txt = box && "value" in box ? String(box.value || "") : "";
         if (!txt.trim()) return showToast("AI briefing text is empty.");
-        copyToClipboard(txt, "AI briefing text copied.", "Unable to copy. Please copy manually.");
+        await copyToClipboard(txt, "AI briefing text copied.", "Unable to copy. Please copy manually.");
       });
+    }
 
-    const copyJsonBtn = $("#copyResultsJson");
-    if (copyJsonBtn)
-      copyJsonBtn.addEventListener("click", e => {
+    const copyJson = document.getElementById("copyResultsJson") || document.getElementById("copyResultsJsonBtn");
+    if (copyJson && !copyJson.__bound) {
+      copyJson.__bound = true;
+      copyJson.addEventListener("click", async e => {
         e.preventDefault();
         const payload = buildResultsJsonPayload();
-        copyToClipboard(JSON.stringify(payload, null, 2), "Results JSON copied.", "Unable to copy. Please copy manually.");
+        await copyToClipboard(JSON.stringify(payload, null, 2), "Results JSON copied.", "Unable to copy. Please copy manually.");
       });
-  }
-
-  // =========================
-  // 19) OPTIONAL TOOLTIP MAP (kept, extended)
-  // =========================
-  function applyIndicatorTooltips() {
-    const map = {
-      pvBenefits:
-        "Present value of benefits for the set of non control treatments combined, discounted at the base rate.",
-      pvCosts:
-        "Present value of incremental costs for the set of non control treatments combined, discounted at the base rate.",
-      npv:
-        "Net present value for the set of non control treatments combined, equal to present value of benefits minus present value of costs.",
-      bcr:
-        "Benefit cost ratio for the set of non control treatments combined, equal to present value of benefits divided by present value of costs."
-    };
-
-    Object.keys(map).forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.title = map[id];
-    });
+    }
   }
 
   // =========================
   // 20) INIT
   // =========================
-  document.addEventListener("DOMContentLoaded", () => {
+  function init() {
+    ensureToastRoot();
     initTabs();
-    bindBasics();
     initImportBindings();
+    bindBasics();
     bindResultsFilters();
-    bindActionButtons();
+    bindSensitivityControls();
+    bindAiButtons();
 
-    // Load saved scenario if available
+    renderAll();
+    renderImportSummary();
+    renderDataChecks();
     refreshScenarioSelect();
+
     tryLoadActiveScenario();
 
-    // Render initial UI
-    renderAll();
-    setBasicsFieldsFromModel();
     calcAndRender();
+    renderSensitivitySummary();
     renderAiBriefing();
-    applyIndicatorTooltips();
 
-    showToast("Tool loaded.");
-  });
+    // If a Results tab exists and nothing is active, prefer it
+    const preferResults = document.querySelector('[data-tab="results"],[data-tab-target="results"],[data-tab-jump="results"]');
+    if (preferResults && !document.querySelector("[data-tab].active,[data-tab-target].active,[data-tab-jump].active")) {
+      switchTab("results");
+    }
+
+    showToast("Tool ready.");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
